@@ -1,0 +1,12 @@
+Proponuje aby aplikacja by³a 32 bitowa.
+Potrzebny jest klient Oracle – Instant client instantclient_11_2_0_4_32bit
+
+http://www.oracle.com/technetwork/topics/winsoft-085727.html
+Instant Client Package - Basic: All files required to run OCI, OCCI, and JDBC-OCI applications
+Downloadinstantclient-basic-nt-11.2.0.4.0.zip (51,477,933 bytes)
+
+Pliki zapisane sa w katalogu install.
+ 
+Proszê rozpakowaæ do c:\oracle\instantclient_11_2_0_4_32bit i dodaæ c:\oracle\instantclient_11_2_0_4_32bit  do zmiennej systemowej PATH oraz zrobiæ zmienna systemow¹ TNS_ADMIN o wartoœci c:\oracle
+
+Do c:\oracle wrzuciæ plik tnsadmin.ora oraz sqlnet.ora z za³acznika
