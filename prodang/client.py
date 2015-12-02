@@ -27,22 +27,115 @@ class Client(object):
     def __init__(self, lib_location=None):
         self.library = load_library(lib_location)
         self.pointer = False
-        self.create()
+        #self.init_pro_dll()
+        #self.create()
 
-    def create(self):
+    def db_connect(self, user, password, database):
         """
-        create a SNAP7 client.
+        create a ProdaNG db connection.
         """
-        logger.debug("creating prodang client")
-        self.library.Cli_Create.restype = c_void_p
-        self.pointer = S7Object(self.library.Cli_Create())
+        logger.debug("creating prodang database connection")
+        #self.library.Cli_Create.restype = c_void_p
+        #self.pointer = ProdaNGObject(self.library.InitProDll())
+        self.user = user
+        self.password = password
+        self.database = database
+        self.db_handle = self.login(user, password, database)
+        
+    def disconnect(self):
+        self.logout(self.db_handle)
+        self.exit_pro_dll()
 
-    def destroy(self):
+    def init_pro_dll(self):
+        result = self.library.InitProDll()
+        if result.value == 0:
+            logger.debug("InitProDll successful".format())
+        else:
+            logger.error("InitProDll failed. Return code is: {code}".format(code=result.value))
+        return result
+
+    def exit_pro_dll(self):
         """
         destroy a client.
         """
-        logger.debug("destroying snap7 client")
-        return self.library.Cli_Destroy(byref(self.pointer))
+        logger.debug("destroying prodang client")
+        return self.library.ExitProDll()
+
+
+    def login(self, user, password, database):
+        """
+        This function offers the logon to an Oracle database and can be called in every Thread. In case that the DLL is running in a Shared Context, an existing connection to ORACLE will be terminated first and afterwards reconstructed! In the other case the connection is constructed and a new Handle is created. During the Login phase it is being tried repeatedly to establish the connection to the database. The number of retries is 5, each with 5 seconds standby time between the efforts. If a connection is not possible, this function returns afterwards with the responding Oracle error code.
+        Returncodes:
+            0        no error
+            < 0    ORACLE error code. Because no valid handle was created, the function GetLastErrorMsg() cannot be used.
+            1    Context is no longer available. In this case numContexts in InitProDll() should be increased.
+
+        :param user - User account in the database
+        :param password - Password of the database user account 
+        :param database - Service name or SID of the used database
+        :returns handle 
+        """
+        
+        logger.debug("logging in to database: as user/password@database: {user}/{password}@{database}".format(user=user, password=password, database=database))
+
+        handle = prodang.types.dbHandle
+        result = (self.library.Login(user, password, database, byref(handle)))
+
+        if result.value == 0:
+            logger.info("DB login successful {name}".format(name=__name__))
+        else:
+            if result.value < 0:
+                logger.error("DB login failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result.value))
+                if result.value in prodang.types.db_connection_errors:
+                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result.value, info=prodang.types.db_connection_errors[result.value]))
+            else:
+                logger.error("DB login failed in {name}. Error Code: {code}".format(name=__name__, code=result.value))
+                    
+        return handle
+
+    def logout(self, handle=None):
+        """
+        The function allows the Logoff from the Oracle database. A return value passes back the result of the termination of the connection. It can be called in every thread. The connection to ORACLE is being terminated for the context of the specified Handle and all resources of the handle will be released. If it is being worked with a Shared Context, no thread can access ORACLE afterwards!
+        Returncodes:
+            0        no Error
+            < 0    ORACLE Error code. Because the Handle is invalid when returning from the function, the function GetLastErrorMsg() cannot be used.
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        :param handle 
+        :returns retval 
+        """
+        
+        if handle == None:
+            handle = self.db_handle
+        
+        logger.debug("logging out from database".format())
+
+        result = (self.library.Logout(byref(handle)))
+
+        if result.value == 0:
+            logger.info("DB logout successful {name}".format(name=__name__))
+        else:
+            if result.value < 0:
+                logger.error("DB connection failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result.value))
+                if result.value in prodang.types.db_connection_errors:
+                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result.value, info=prodang.types.db_connection_errors[result.value]))
+            else:
+                logger.error("DB connection failed in {name}. Error Code: {code}".format(name=__name__, code=result.value))
+                    
+        return result.value
+
+
+
+
+'''
+
+
+
+
+
+
+
+
+
 
     def plc_stop(self):
         """
@@ -523,3 +616,4 @@ class Client(object):
         import datetime
         logger.debug("Updating System DateTime to PLC: (PC->PLC) %s" % datetime.datetime.now())
         return self.library.Cli_SetPlcSystemDateTime(self.pointer)
+'''
