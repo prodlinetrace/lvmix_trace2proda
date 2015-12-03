@@ -2,12 +2,14 @@
 prodang client used for connection to a Wabco's Proda database.
 """
 import re
+import ctypes
 from ctypes import c_int, c_char_p, byref, sizeof, c_uint16, c_int32, c_byte, c_void_p
 import logging
 
 import prodang
 from prodang.common import check_error, load_library, ipv4
 from prodang.exceptions import ProdaNGException
+from prodang.types import dbHandle, ProdaNGObject
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class Client(object):
     def __init__(self, lib_location=None):
         self.library = load_library(lib_location)
         self.pointer = False
-        #self.init_pro_dll()
+        self.init_pro_dll()
         #self.create()
 
     def db_connect(self, user, password, database):
@@ -47,11 +49,11 @@ class Client(object):
         self.exit_pro_dll()
 
     def init_pro_dll(self):
-        result = self.library.InitProDll()
-        if result.value == 0:
+        result = (self.library.InitProDll(c_int(1)))
+        if result == 0:
             logger.debug("InitProDll successful".format())
         else:
-            logger.error("InitProDll failed. Return code is: {code}".format(code=result.value))
+            logger.error("InitProDll failed. Return code is: {code}".format(code=result))
         return result
 
     def exit_pro_dll(self):
@@ -78,18 +80,17 @@ class Client(object):
         
         logger.debug("logging in to database: as user/password@database: {user}/{password}@{database}".format(user=user, password=password, database=database))
 
-        handle = prodang.types.dbHandle
-        result = (self.library.Login(user, password, database, byref(handle)))
-
-        if result.value == 0:
+        handle = (dbHandle)()
+        result = int(self.library.Login(user, password, database, byref(handle)))
+        if result== 0:
             logger.info("DB login successful {name}".format(name=__name__))
         else:
-            if result.value < 0:
-                logger.error("DB login failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result.value))
-                if result.value in prodang.types.db_connection_errors:
-                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result.value, info=prodang.types.db_connection_errors[result.value]))
+            if result < 0:
+                logger.error("DB login failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result))
+                if result in prodang.types.db_connection_errors:
+                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result, info=prodang.types.db_connection_errors[result]))
             else:
-                logger.error("DB login failed in {name}. Error Code: {code}".format(name=__name__, code=result.value))
+                logger.error("DB login failed in {name}. Error Code: {code}".format(name=__name__, code=result))
                     
         return handle
 
@@ -107,21 +108,21 @@ class Client(object):
         if handle == None:
             handle = self.db_handle
         
-        logger.debug("logging out from database".format())
+        logger.debug("logging out from database. Handle: {handle}".format(handle=handle))
 
-        result = (self.library.Logout(byref(handle)))
+        result = (self.library.Logout(handle))
 
-        if result.value == 0:
+        if result == 0:
             logger.info("DB logout successful {name}".format(name=__name__))
         else:
-            if result.value < 0:
-                logger.error("DB connection failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result.value))
-                if result.value in prodang.types.db_connection_errors:
-                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result.value, info=prodang.types.db_connection_errors[result.value]))
+            if result < 0:
+                logger.error("DB logout failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result))
+                if result in prodang.types.db_connection_errors:
+                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result, info=prodang.types.db_connection_errors[result]))
             else:
-                logger.error("DB connection failed in {name}. Error Code: {code}".format(name=__name__, code=result.value))
+                logger.error("DB logout failed in {name}. Error Code: {code}".format(name=__name__, code=result))
                     
-        return result.value
+        return result
 
 
 

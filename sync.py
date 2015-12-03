@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     logging.root.setLevel(logging.DEBUG)
+    logger.root.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
     logger.info("Starting main app")
     #sys.argv.append("-v")
     sync = Sync(sys.argv)
@@ -18,10 +20,10 @@ def main():
     lib  = os.path.abspath(lib)
     #print lib, os.path.exists(lib)
     client = Client(lib)
-    print "client created."
+    logger.info("client created")
     client.db_connect(user="prodang", password="wabco", database="proda")
-    #client.disconnect()
     
+    client.disconnect()
     
     print "PL OK"
 
