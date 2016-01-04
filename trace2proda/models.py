@@ -10,7 +10,7 @@ from flask.ext.login import UserMixin
 from . import db
 logger = logging.getLogger(__name__)
 
-__version__ = '0.6.0'
+__version__ = '0.5.0'
 
 
 class User(UserMixin, db.Model):
@@ -325,7 +325,6 @@ class Operation_Status(db.Model):
     result_3_status = db.relationship('Operation', lazy='dynamic', backref='result_3_status', foreign_keys='Operation.result_3_status_id')
 
     status = db.relationship('Status', lazy='dynamic', backref='status_name', foreign_keys='Status.status')
-    proda_id = db.Column(db.Integer)
 
     def __init__(self, id, name="Default Operation Status", description="Default Operation Status Description", unit_id=0):
         self.id = id
@@ -353,7 +352,6 @@ class Operation_Type(db.Model):
     name = db.Column(db.String(64))
     description = db.Column(db.String(255))
     operations = db.relationship('Operation', lazy='dynamic', backref='operation_type')
-    proda_id = db.Column(db.Integer)
 
     def __init__(self, id, name="Default Operation Name", description="Default Operation Description"):
         self.id = id
@@ -423,34 +421,4 @@ class Variant(db.Model):
             'id': self.id,
             'name': self.name,
             'description': self.description,
-        }
-
-
-class T2P(db.Model):
-    __tablename__ = 'T2P'
-    id = db.Column(db.Integer, primary_key=True)
-    type = db.Column(db.String(10), nullable=False, index=True, unique=False)
-    station_id = db.Column(db.Integer)
-    proda_id = db.Column(db.Integer)  # proda test_step_id
-    #type = db.Column(db.String(64))
-    
-    #variant = db.relationship('Operation', lazy='dynamic', backref='proda', foreign_keys='Operation.variant_id')
-
-    def __init__(self, id, trace_id, station_id, proda_id):
-        self.id = id
-        self.type = type
-        self.station_id = station_id
-        self.proda_id = proda_id
-
-    def __repr__(self):
-        return '<ProdaTranslation Id: {id} type: {type},  station_id: {station_id}, proda_id: {proda_id}>'.format(id=self.id, type=self.type, station_id=self.station_id, proda_id=self.proda_id)
-
-    @property
-    def serialize(self):
-        """Return object data in easily serializeable format"""
-        return {
-            'id': self.id,
-            'type': self.type,
-            'station_id': self.station_id,
-            'proda_id': self.proda_id,
         }
