@@ -10,7 +10,7 @@ from flask.ext.login import UserMixin
 from . import db
 logger = logging.getLogger(__name__)
 
-__version__ = '0.4.3'
+__version__ = '0.5.0'
 
 
 class User(UserMixin, db.Model):
@@ -107,16 +107,20 @@ class Product(db.Model):
     serial = db.Column(db.String(6), nullable=False, index=True, unique=False)
     week = db.Column(db.String(2), nullable=False, index=True, unique=False)
     year = db.Column(db.String(2), nullable=False, index=True, unique=False)
+    variant_id = db.Column(db.Integer, db.ForeignKey('variant.id'), nullable=False, index=True, unique=False)
+    prodasync = db.Column(db.Integer, nullable=False, index=True, unique=False, default=0)
     date_added = db.Column(db.DateTime(), index=True, default=datetime.now)
     comments = db.relationship('Comment', lazy='dynamic', backref='product')
     statuses = db.relationship('Status', lazy='dynamic', backref='product')
     operations = db.relationship('Operation', lazy='dynamic', backref='product')
 
-    def __init__(self, prodtype, serial, week, year):
+    def __init__(self, prodtype, serial, week, year, variant_id, prodasync):
         self.type = prodtype
         self.serial = serial
         self.week = week
         self.year = year
+        self.variant_id = variant_id
+        self.prodasync = prodasync
         self.id = self.get_product_id(self.type, self.serial, self.week, self.year)
 
     def __repr__(self):
@@ -154,6 +158,8 @@ class Product(db.Model):
             'serial': self.serial,
             'week': self.week,
             'year': self.year,
+            'variant_id': self.variant_id,
+            'prodasync': self.prodasync,
         }
 
 
@@ -389,5 +395,30 @@ class Unit(db.Model):
             'id': self.id,
             'name': self.name,
             'symbol': self.symbol,
+            'description': self.description,
+        }
+
+
+class Variant(db.Model):
+    __tablename__ = 'variant'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64))
+    description = db.Column(db.String(255))
+    variant = db.relationship('Product', lazy='dynamic', backref='variant', foreign_keys='Product.variant_id')
+
+    def __init__(self, id, name="Default Variant Name", description="Default Variant Description"):
+        self.id = id
+        self.name = name
+        self.description = description
+
+    def __repr__(self):
+        return '<Variant Id: {id} Name: {name} Description: {desc}>'.format(id=self.id, name=self.name, desc=self.description)
+
+    @property
+    def serialize(self):
+        """Return object data in easily serializeable format"""
+        return {
+            'id': self.id,
+            'name': self.name,
             'description': self.description,
         }
