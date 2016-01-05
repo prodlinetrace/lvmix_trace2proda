@@ -334,7 +334,7 @@ class Client(object):
 
 
 
-
+'''
 
     def plc_stop(self):
         """
