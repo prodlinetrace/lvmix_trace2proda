@@ -2,14 +2,16 @@
 prodang client used for connection to a Wabco's Proda database.
 """
 import re
-import ctypes
-from ctypes import c_int, c_char_p, byref, sizeof, c_uint16, c_int32, c_byte, c_void_p
+#import ctypes
+#from ctypes import c_int, c_char_p, byref, sizeof, c_uint16, c_int32, c_byte, c_void_p, c_char
+from ctypes import *
 import logging
+from datetime import datetime
 
 import prodang
 from prodang.common import check_error, load_library, ipv4
-from prodang.exceptions import ProdaNGException
-from prodang.types import dbHandle, ProdaNGObject
+from prodang.exceptions import ProdaNGException, ProdaNGDBConnectionError
+from prodang.types import dbHandle, ProdaNGObject, LanguageData, LanguageDataPtr
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,10 @@ logger = logging.getLogger(__name__)
 def error_wrap(func):
     """Parses a prodang error code returned the decorated function."""
     def f(*args, **kw):
-        code = func(*args, **kw)
-        check_error(code, context="client")
+        returned_items = func(*args, **kw)
+        code = returned_items[0]
+        #print "items", returned_items, "code", code
+        check_error(code, context=func.__name__)
     return f
 
 
@@ -29,8 +33,9 @@ class Client(object):
     def __init__(self, lib_location=None):
         self.library = load_library(lib_location)
         self.pointer = False
+        self.db_handle = None
+        self.result = 0
         self.init_pro_dll()
-        #self.create()
 
     def db_connect(self, user, password, database):
         """
@@ -42,10 +47,10 @@ class Client(object):
         self.user = user
         self.password = password
         self.database = database
-        self.db_handle = self.login(user, password, database)
+        self.login(user, password, database)
         
-    def disconnect(self):
-        self.logout(self.db_handle)
+    def db_disconnect(self):
+        self.logout()
         self.exit_pro_dll()
 
     def init_pro_dll(self):
@@ -63,7 +68,7 @@ class Client(object):
         logger.debug("destroying prodang client")
         return self.library.ExitProDll()
 
-
+    @error_wrap
     def login(self, user, password, database):
         """
         This function offers the logon to an Oracle database and can be called in every Thread. In case that the DLL is running in a Shared Context, an existing connection to ORACLE will be terminated first and afterwards reconstructed! In the other case the connection is constructed and a new Handle is created. During the Login phase it is being tried repeatedly to establish the connection to the database. The number of retries is 5, each with 5 seconds standby time between the efforts. If a connection is not possible, this function returns afterwards with the responding Oracle error code.
@@ -78,23 +83,25 @@ class Client(object):
         :returns handle 
         """
         
-        logger.debug("logging in to database: as user/password@database: {user}/{password}@{database}".format(user=user, password=password, database=database))
+        operation = "logging in to database"
+        logger.debug("Operation: {operation}, as user/password@database: {user}/{password}@{database}".format(operation=operation, user=user, password=password, database=database))
 
         handle = (dbHandle)()
         result = int(self.library.Login(user, password, database, byref(handle)))
-        if result== 0:
-            logger.info("DB login successful {name}".format(name=__name__))
-        else:
-            if result < 0:
-                logger.error("DB login failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result))
-                if result in prodang.types.db_connection_errors:
-                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result, info=prodang.types.db_connection_errors[result]))
-            else:
-                logger.error("DB login failed in {name}. Error Code: {code}".format(name=__name__, code=result))
-                    
-        return handle
 
-    def logout(self, handle=None):
+        log_msg = "Result: {result}, Operation: {operation},, Func_name: {name}. Handle: {handle}, user: {user}, password: {password}, database: {database}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, user=user, password=password, database=database)
+        if result == 0:
+            logger.info("DB login successful {name}".format(name=__name__))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))
+        
+        # set the db_handle
+        self.db_handle = handle.value
+        
+        return (result, self.db_handle)
+
+    @error_wrap
+    def logout(self):
         """
         The function allows the Logoff from the Oracle database. A return value passes back the result of the termination of the connection. It can be called in every thread. The connection to ORACLE is being terminated for the context of the specified Handle and all resources of the handle will be released. If it is being worked with a Shared Context, no thread can access ORACLE afterwards!
         Returncodes:
@@ -105,30 +112,221 @@ class Client(object):
         :returns retval 
         """
         
-        if handle == None:
-            handle = self.db_handle
-        
-        logger.debug("logging out from database. Handle: {handle}".format(handle=handle))
+        operation = "logging out from database"
+        logger.debug("{operation}. Handle: {handle}".format(operation=operation, handle=self.db_handle))
 
-        result = (self.library.Logout(handle))
+        result = int(self.library.Logout(self.db_handle))
 
         if result == 0:
             logger.info("DB logout successful {name}".format(name=__name__))
         else:
-            if result < 0:
-                logger.error("DB logout failed in {name}.  Oracle error: ORA{code}".format(name=__name__, code=result))
-                if result in prodang.types.db_connection_errors:
-                    logger.error("Error Code: {code} Info:{info}".format(name=__name__, code=result, info=prodang.types.db_connection_errors[result]))
-            else:
-                logger.error("DB logout failed in {name}. Error Code: {code}".format(name=__name__, code=result))
+            logger.error("DB logout failed in {name}. Error Code: {code}".format(name=__name__, code=result))
                     
-        return result
+        return (result, None)
+
+    @error_wrap
+    def set_db_id(self, dbId):
+        """
+        This function overwrites the standard respectively preference value of the DBID for this session until a Logout().
+
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            dbId is an Integer, which indicates the DBID, which should be used at the creation of new rows in the database. A further use of DBID does not take place in the DLL.
 
 
+        Returncodes:
+            0        No error
+            < 0    ORACLE error code 
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+        """
+        
+        operation = "Setting the Database ID (DBID)"
+        logger.debug("{operation}. Handle: {handle}, dbId: {dbId}".format(operation=operation, handle=self.db_handle, dbId=dbId))
+        result = int(self.library.SetDBId(self.db_handle, dbId))
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, dbId: {dbId}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, dbId=dbId)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))
+                    
+        return (result, None)
+        
+
+    @error_wrap
+    def set_preference(self, key, value):
+        """
+        This function overwrites the standard value for the preference named in key for this session until a Logout().
+
+        Parameter:
+            handle ist ein Integer, den die Funktion Login() bei Erzeugung einer neue Verbindung zuruckgibt.
+            key  is the name of the preference to set. Actual the following preferences are supported:
+                RETRYCOUNT            
+                RETRYWAIT
+                RETRYISRECONNECT
+                IGNORERELEASEID
+
+        According to the preference name the integer passed in value will be used as
+            Number of retries in case of a database Retry/Reconnect
+            Number of seconds to wait between two retries
+            A value not equal 0 in case a Retry always leads to Reconnect.
+            A value not equal 0 in case Release Id's should be ignored while fetching from process description tables. This is used in process test environments only!
+
+        Returncodes:
+            0        No error
+            6        (ERROR_INVALID_HANDLE) in case of an invalid handle
+            232      (ERROR_NO_DATA) in case of an invalid preference
+        """
+        
+        operation = "Setting preference"
+        logger.debug("{operation} {name}. Handle: {handle}, key: {key}, value: {value}".format(operation=operation, name=__name__, handle=self.db_handle, key=key, value=value))
+        result = int(self.library.SetPreference(self.db_handle, key, value))
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, key: {key}, value: {value}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, key=key, value=value)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))
+                    
+        return (result, None)
 
 
-'''
+    @error_wrap
+    def get_last_error_msg(self):
+        """
+        This function returns the text of the last ORACLE error for a defined context. This function can only be used with a valid Handle.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+        Return Value:
+            Last ORACLE error message
+            In case that a handle is invalid, an empty string is returned.
+        """
+        
+        operation = "Getting last Oracle error message"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        result = self.library.GetLastErrorMsg(self.db_handle)
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}".format(operation=operation, result=result, name=__name__, handle=self.db_handle)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+        return (result, None)
 
+
+    @error_wrap
+    def get_database_time(self):
+        """
+        This function passes back the current system time of the database.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            timeBuf is a Character Array in which the time given back in the format DD.MM.YYYY HH24:MI:SS when the Returncode is 0.
+        
+        Gets datetime structure from DB and transforms it to python's time.struct_time
+        """
+        
+        operation = "Getting Database Time"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        time_buf = (c_char * 24)()
+        result = self.library.GetDatabaseTime(self.db_handle, byref(time_buf))
+        #print time_buf.value
+        struct_datetime = datetime.strptime(time_buf.value.strip(), "%d.%m.%Y %H:%M:%S")
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, datetime: {struct_datetime}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, struct_datetime=struct_datetime)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return (result, struct_datetime)
+
+
+    @error_wrap
+    def get_languages(self):
+        """
+        This function returns all available languages.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            Languages is a pointer, in which the languages are returned as an array of pointers on language data structures, when the returncode is 0.
+            typedef struct LanguageData {
+                idbID    id;            // Id of Record
+                char    isoCode[34];    // Iso Code (en,de,)
+                char    name[66];        // Descriptional name (English)
+            } * LanguageDataPtr;
+            
+            countPtr is a pointer on an Integer in which the number of records is returned in *languages, if the returncode 0. 
+            
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+            
+        An example, that is representative for all functions that work with arrays:
+        
+        LanguageDataPtr    *langArray;
+        int count;
+        RetVal i = GetLanguages(handle, &langArray, &count);
+        // Check errors and counts [omitted]
+        LanguageDataPtr lang1 = langArray[0]; // Access first record
+        char *iso = lang1->isoCode;    // Access isoCode in first language
+        FreeStructArray((void **)langArray); // Free the array after 
+        
+        
+        @return languages - hash of languages   
+        """
+        operation = "Getting All Languages"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        languageDataPtr = pointer(LanguageDataPtr())
+        result = self.library.GetLanguages(self.db_handle, byref(languageDataPtr), byref(countPtr))
+        lang_count = countPtr.value
+        languages = {}
+        for item in languageDataPtr[:lang_count]:
+            if item.contents is None:
+                break
+            lang = {
+                    'id': item.contents.id, 
+                    'isoCode': item.contents.isoCode,
+                    'name': item.contents.name
+                    }
+            languages[item.contents.id] = lang
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, lang_count: {lang_count}, languages: {languages}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, lang_count=lang_count, languages=languages)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return (result, languages)
+
+    @error_wrap
+    def set_language(self, languageId):
+        """
+        This function sets the wanted language for this session and overwrites the default value respective Preference LANGUAGEID with it.
+        In subsequent functions, that delivers or writes language-dependent data, the id specifies language that should be used. If a description is not existent in the desired language, the description is taken from the language 0 (English).
+        If a language-dependent description is inserted or changed, it is being marked with the currently set language. Additionally this description is deposited for language 0, in case that the description does not exist and the current language is not 0.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            languageId is the Id of one language, which is returned from GetLanguages().
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+            232    (ERROR_NO_DATA) in case of an invalid Id.
+        """
+        
+        operation = "Setting Language"
+        logger.debug("{operation}. Handle: {handle}, languageId: {languageId}".format(operation=operation, handle=self.db_handle, languageId=languageId))
+        result = int(self.library.SetLanguage(self.db_handle, languageId))
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, languageId: {languageId}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, languageId=languageId)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))
+                    
+        return (result, None)
+        
+
+    
 
 
 

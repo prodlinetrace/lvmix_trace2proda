@@ -22,8 +22,17 @@ def main():
     client = Client(lib)
     logger.info("client created")
     client.db_connect(user="prodang", password="wabco", database="proda")
+    client.get_last_error_msg()
+    client.set_preference("RETRYCOUNT", 2)
+    client.get_last_error_msg()
+    client.get_database_time()
+    client.get_last_error_msg()
+    client.set_language(3)
+    client.get_languages()
+    client.get_last_error_msg()
+
+    client.db_disconnect()
     
-    client.disconnect()
     
     print "PL OK"
 

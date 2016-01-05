@@ -1,9 +1,10 @@
-from ctypes import c_char
+from ctypes import c_char, c_long, c_ulong
 from ctypes.util import find_library
 import logging
-from prodang.exceptions import ProdaNGException
+from .exceptions import ProdaNGOracleException, ProdaNGFunctionalException, ProdaNGException
 
 import platform
+from _ctypes import byref
 if platform.system() == 'Windows':
     from ctypes import windll as cdll
 else:
@@ -23,6 +24,7 @@ class ADict(dict):
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
 
+from .types import errors
 
 class ProdaNGLibrary(object):
     """
@@ -58,30 +60,35 @@ def check_error(code, context="client"):
     """
     check if the error code is set. If so, a Python log message is generated
     and an error is raised.
+    In case code is 0 - no error is returned
     """
-    if code:
-        error = error_text(code, context)
-        logger.error(error)
-        raise ProdaNGException(error)
-
+    error_str = ""
+    if code is not None:
+        if code in errors:
+            error_str = errors[code]
+    if code == 0:
+        logger.debug("Error code: {code}, Error String: {error_str}, Context: {context}".format(code=code, context=context, error_str=error_str))
+    elif code < 0:
+        oracle_error = str(error_text(code, context))
+        error_str = " " + oracle_error
+        logger.error("Error code: {code}, Error String: {error_str}, Context: {context}".format(code=code, context=context, error_str=error_str))
+        raise ProdaNGOracleException(code, error_str, oracle_error, context)
+    elif code > 0:
+        logger.error("Error code: {code}, Error String: {error_str}, Context: {context}".format(code=code, context=context, error_str=error_str))
+        raise ProdaNGFunctionalException(code, error_str, context)
+    
 
 def error_text(error, context="client"):
     """Returns a textual explanation of a given error number
 
     :param error: an error integer
-    :param context: server, client or partner
+    :param context: function name that raised error
     :returns: the error string
     """
-    assert context in ("client", "server", "partner")
-    logger.debug("error text for %s" % hex(error))
+    logger.debug("reading error text for code: {code}".format(code=error))
     len_ = 1024
     text_type = c_char * len_
     text = text_type()
     library = load_library()
-    if context == "client":
-        library.Cli_ErrorText(error, text, len_)
-    elif context == "server":
-        library.Srv_ErrorText(error, text, len_)
-    elif context == "partner":
-        library.Par_ErrorText(error, text, len_)
+    library.GetLastErrorMsg(error, byref(text), len_)
     return text.value
