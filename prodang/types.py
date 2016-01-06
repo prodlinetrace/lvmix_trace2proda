@@ -66,10 +66,10 @@ errors.update(functional_errors)
 
 # define some structures
 class LanguageData(Structure):
-    _fields_ = [  ("id", idbID), 
+    _fields_ = [    ("id", idbID), 
                     ("isoCode", (ctypes.c_char * PRODANGDLL_ISOCODE_SIZE)),
-                    ("name", (ctypes.c_char * PRODANGDLL_LANGUAGEDATA_NAME_SIZE))
-                ]
+                    ("name", (ctypes.c_char * PRODANGDLL_LANGUAGEDATA_NAME_SIZE)),
+    ]
     
     __repr__ = "<{t} Id: {id}>, Name: {name}".format(t=type, id="id", name="name")
  
@@ -77,58 +77,58 @@ LanguageDataPtr = ctypes.POINTER(LanguageData)
  
  
 class OpaqueData(Structure):
-    _fields_ = [  ("id", cdbID), 
+    _fields_ = [    ("id", cdbID), 
                     ("mimeTypeId", idbID),
                     ("binLength", ctypes.c_int),
                     ("binary", ctypes.c_void_p),
-                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE))
-                ]
+                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
+    ]
 
 OpaqueDataPtr = ctypes.POINTER(OpaqueData)
 
 
 class MimeType(Structure):
-    _fields_ = [  ("id", idbID), 
+    _fields_ = [    ("id", idbID), 
                     ("mimeType", (ctypes.c_char * PRODANGDLL_MIMETYPE_SIZE)),
-                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE))
-                ]
+                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
+    ]
 
 MimeTypePtr = ctypes.POINTER(MimeType)
 
 
 class UnitData(Structure):
-    _fields_ = [  ("id", idbID), 
+    _fields_ = [    ("id", idbID), 
                     ("unitName", (ctypes.c_char * PRODANGDLL_UNITNAME_SIZE)),
                     ("mdReason", (ctypes.c_char * PRODANGDLL_MDREASON_SIZE)),
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
-                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE))
-                ]
+                    ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
+    ]
 
 UnitDataPtr = ctypes.POINTER(UnitData)
 
 
 class Identification(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    
                     ("processId", idbID),
                     ("systemId", idbID),
                     ("processStepId", idbID),
-                    ("wabcoPartId", idbID) 
-                ]   
+                    ("wabcoPartId", idbID), 
+    ]
 
 IdentificationPtr = ctypes.POINTER(Identification)
 
 
 class System(Structure):
-    _fields_ = [  ("id", idbID), 
-                    ("name", (ctypes.c_char * PRODANGDLL_SYSTEM_NAME_SIZE))
-                ]
+    _fields_ = [    ("id", idbID), 
+                    ("name", (ctypes.c_char * PRODANGDLL_SYSTEM_NAME_SIZE)),
+    ]
  
 SystemPtr = ctypes.POINTER(System)
  
  
 class WabcoPart(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("workCenterId", idbID),
                     ("contentId", idbID),
                     ("previewId", idbID),
@@ -137,13 +137,13 @@ class WabcoPart(Structure):
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("productName", (ctypes.c_char * PRODANGDLL_PRODUCTNAME_SIZE)),
                     ("wabcoNumber", (ctypes.c_char * PRODANGDLL_WABCONUMBER_SIZE)),
-                ]
+    ]
 
 WabcoPartPtr = ctypes.POINTER(WabcoPart)
 
 
 class Process(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("productionLineId", idbID),
                     ("releaseId", idbID),
                     ("contentId", cdbID),
@@ -152,13 +152,13 @@ class Process(Structure):
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 ProcessPtr = ctypes.POINTER(Process)    
 
 
 class ProcessStep(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("processId", idbID),
                     ("systemId", idbID),
                     ("releaseId", idbID),
@@ -171,13 +171,13 @@ class ProcessStep(Structure):
                     ("filename", (ctypes.c_char * PRODANGDLL_FILENAME_SIZE)),
                     ("transfer", (ctypes.c_char * PRODANGDLL_TRANSFER_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 ProcessStepPtr = ctypes.POINTER(ProcessStep)
 
 
 class ProcessStepParam(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("processStepId", idbID),
                     ("unitId", idbID),
                     ("contentId", cdbID),
@@ -190,13 +190,13 @@ class ProcessStepParam(Structure):
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 ProcessStepParamPtr = ctypes.POINTER(ProcessStepParam)
 
 
 class TestStep(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("processStepId", idbID),
                     ("testSequence", ctypes.c_int),
                     ("testOrder", ctypes.c_int),
@@ -204,13 +204,13 @@ class TestStep(Structure):
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 TestStepPtr = ctypes.POINTER(TestStep)
 
 
 class TestStepParam(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("testStepId", idbID),
                     ("unitId", idbID),
                     ("contentId", cdbID),
@@ -223,13 +223,13 @@ class TestStepParam(Structure):
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 TestStepParamPtr = ctypes.POINTER(TestStepParam)
 
 
 class TestValue(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("testStepId", idbID),
                     ("releaseId", idbID),
                     ("unitId", idbID),
@@ -244,13 +244,13 @@ class TestValue(Structure):
                     ("mdUser", (ctypes.c_char * PRODANGDLL_MDUSER_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 TestValuePtr = ctypes.POINTER(TestValue)
 
 
 class Product(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("wabcoPartId", idbID),
                     ("serialNumber", (ctypes.c_char * PRODANGDLL_SERIALNUMBER_SIZE)),
                     ("comment", (ctypes.c_char * PRODANGDLL_COMMENT_SIZE)),
@@ -259,13 +259,13 @@ class Product(Structure):
                     ("mdProcessStepId", idbID),
                     ("crTime", (ctypes.c_char * PRODANGDLL_CRTIME_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
-                ]
+    ]
 
 ProductPtr = ctypes.POINTER(Product)
 
 
 class Product_lsn(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("wabcoPartId", idbID),
                     ("serialNumber", (ctypes.c_char * PRODANGDLL_SERIALNUMBER_SIZE_LSN)),
                     ("comment", (ctypes.c_char * PRODANGDLL_COMMENT_SIZE)),
@@ -274,85 +274,85 @@ class Product_lsn(Structure):
                     ("mdProcessStepId", idbID),
                     ("crTime", (ctypes.c_char * PRODANGDLL_CRTIME_SIZE)),
                     ("mdTime", (ctypes.c_char * PRODANGDLL_MDTIME_SIZE)),
-                ]
+    ]
 
 Product_lsnPtr = ctypes.POINTER(Product_lsn)
 
 
 class ProcessResult(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("productId", cdbID),
                     ("processId", idbID),
                     ("statusId", idbID),
                     ("startTime", (ctypes.c_char * PRODANGDLL_STARTTIME_SIZE)),
                     ("endTime", (ctypes.c_char * PRODANGDLL_ENDTIME_SIZE)),
-                ]
+    ]
 
 ProcessResultPtr = ctypes.POINTER(ProcessResult)
 
 
 class ProcessStepResult(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("processResultId", cdbID),
                     ("processStepId", idbID),
                     ("statusId", idbID),
                     ("operatorId", idbID),
                     ("startTime", (ctypes.c_char * PRODANGDLL_STARTTIME_SIZE)),
                     ("endTime", (ctypes.c_char * PRODANGDLL_ENDTIME_SIZE)),
-                ]
+    ]
 
 ProcessStepResultPtr = ctypes.POINTER(ProcessStepResult)
 
 
 class TestStepResult(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("processStepResultId", cdbID),
                     ("testStepId", idbID),
                     ("statusId", idbID),
-                ]
+    ]
 
 TestStepResultPtr = ctypes.POINTER(TestStepResult)
 
 
 class TestValueResult(Structure):
-    _fields_ = [  ("id", cdbID),
+    _fields_ = [    ("id", cdbID),
                     ("testStepResultId", cdbID),
                     ("testValueId", idbID),
                     ("result", ctypes.c_double),
                     ("statusId", idbID),
                     ("contentId", cdbID),
-                ]
+    ]
 
 TestValueResultPtr = ctypes.POINTER(TestValueResult)
 
 
 class ProductionLine(Structure):
-    _fields_ = [  ("id", idbID),
+    _fields_ = [    ("id", idbID),
                     ("description", (ctypes.c_char * PRODANGDLL_DESCRIPTION_SIZE)),
-                ]
+    ]
 
 ProductionLinePtr = ctypes.POINTER(ProductionLine)
 
 
 class Product_Component(Structure):
-    _fields_ = [  ("product", Product_lsnPtr),
+    _fields_ = [    ("product", Product_lsnPtr),
                     ("component", Product_lsnPtr),
                     ("processStepResult", ProcessStepResultPtr),
                     ("qty", ctypes.c_int),
                     ("level", ctypes.c_int),
-                ]
+    ]
 
 Product_ComponentPtr = ctypes.POINTER(Product_Component)
 
 
 class Product_Component_wnr_snr(Structure):
-    _fields_ = [  ("product_wabcoNumber", (ctypes.c_char * PRODANGDLL_WABCONUMBER_SIZE)),
+    _fields_ = [    ("product_wabcoNumber", (ctypes.c_char * PRODANGDLL_WABCONUMBER_SIZE)),
                     ("product_serialNumber", (ctypes.c_char * PRODANGDLL_SERIALNUMBER_SIZE_LSN)),
                     ("component_wabcoNumber", (ctypes.c_char * PRODANGDLL_WABCONUMBER_SIZE)),
                     ("component_serialNumber", (ctypes.c_char * PRODANGDLL_SERIALNUMBER_SIZE_LSN)),
                     ("processStepResultId", cdbID),
                     ("qty", ctypes.c_int),
                     ("level", ctypes.c_int),
-                ]
+    ]
 
 Product_Component_wnr_snrPtr = ctypes.POINTER(Product_Component_wnr_snr)

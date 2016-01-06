@@ -11,7 +11,7 @@ from datetime import datetime
 import prodang
 from prodang.common import check_error, load_library, ipv4
 from prodang.exceptions import ProdaNGException, ProdaNGDBConnectionError
-from prodang.types import dbHandle, ProdaNGObject, LanguageData, LanguageDataPtr
+from prodang.types import *
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 def error_wrap(func):
     """Parses a prodang error code returned the decorated function."""
     def f(*args, **kw):
-        returned_items = func(*args, **kw)
-        code = returned_items[0]
-        #print "items", returned_items, "code", code
+        items = func(*args, **kw)
+        code = items.pop(0)  # read and remove first returned argument 
         check_error(code, context=func.__name__)
+        return items[0]
     return f
 
 
@@ -98,7 +98,7 @@ class Client(object):
         # set the db_handle
         self.db_handle = handle.value
         
-        return (result, self.db_handle)
+        return [result, self.db_handle]
 
     @error_wrap
     def logout(self):
@@ -122,7 +122,7 @@ class Client(object):
         else:
             logger.error("DB logout failed in {name}. Error Code: {code}".format(name=__name__, code=result))
                     
-        return (result, None)
+        return [result, None]
 
     @error_wrap
     def set_db_id(self, dbId):
@@ -149,7 +149,7 @@ class Client(object):
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))
                     
-        return (result, None)
+        return [result, None]
         
 
     @error_wrap
@@ -186,10 +186,8 @@ class Client(object):
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))
                     
-        return (result, None)
+        return [result, None]
 
-
-    @error_wrap
     def get_last_error_msg(self):
         """
         This function returns the text of the last ORACLE error for a defined context. This function can only be used with a valid Handle.
@@ -202,13 +200,14 @@ class Client(object):
         
         operation = "Getting last Oracle error message"
         logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
-        result = self.library.GetLastErrorMsg(self.db_handle)
+        buf = time_buf = (c_char * 1024)()
+        result = self.library.GetLastErrorMsg(self.db_handle, byref(buf))
         log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}".format(operation=operation, result=result, name=__name__, handle=self.db_handle)
         if result == 0:
             logger.info("Successful. {msg}".format(msg=log_msg))
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))                
-        return (result, None)
+        return buf.value
 
 
     @error_wrap
@@ -235,7 +234,7 @@ class Client(object):
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))                
 
-        return (result, struct_datetime)
+        return [result, struct_datetime]
 
 
     @error_wrap
@@ -285,8 +284,8 @@ class Client(object):
             lang = {
                     'id': item.contents.id, 
                     'isoCode': item.contents.isoCode,
-                    'name': item.contents.name
-                    }
+                    'name': item.contents.name,
+            }
             languages[item.contents.id] = lang
 
         log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, lang_count: {lang_count}, languages: {languages}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, lang_count=lang_count, languages=languages)
@@ -295,7 +294,7 @@ class Client(object):
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))                
 
-        return (result, languages)
+        return [result, languages]
 
     @error_wrap
     def set_language(self, languageId):
@@ -323,496 +322,426 @@ class Client(object):
         else: 
             logger.error("Failed. {msg}".format(msg=log_msg))
                     
-        return (result, None)
+        return [result, None]
+
+    @error_wrap
+    def get_units(self):
+        """
+        RetVal GetUnits ( dbHandle handle, UnitDataPtr **units, int *countPtr )
+        This function returns all available units, sorted by their names.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            units is a pointer, in which the units are returned as an array of pointers on unit data structures , if the returncode is 0.
+            typedef struct UnitData {
+                idbID    id;            // Id of Record
+                char    unitName[12];    // Name of unit
+                char    mdReason[514];    // Reason of last change
+                char    mdUser[22];        // Last changed by user
+                char    mdTime[24];        // Date of last change
+                char    description[514];    // Translated description
+            } * UnitDataPtr;
         
-
-    
-
-
-
-
-
-
-
-'''
-
-    def plc_stop(self):
+            countPtr is a pointer on an Integer in which the number of records in *units is returned, if the returncode is 0.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        
+        @return units - hash of all units   
         """
-        stops a client
-        """
-        logger.info("stopping plc")
-        return self.library.Cli_PlcStop(self.pointer)
+        operation = "Getting All units"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        unitDataPtr = pointer(UnitDataPtr())
+        result = self.library.GetUnits(self.db_handle, byref(unitDataPtr), byref(countPtr))
+        count = countPtr.value
+        units = {}
+        for item in unitDataPtr[:count]:
+            if item.contents is None:
+                break
+            unit = {
+                    'id': item.contents.id, 
+                    'unitName': item.contents.unitName,
+                    'mdReason': item.contents.mdReason,
+                    'mdUser': item.contents.mdUser,
+                    'mdTime': item.contents.mdTime,
+                    'description': item.contents.description,
+            }
+            units[item.contents.id] = unit
 
-    def plc_cold_start(self):
-        """
-        cold starts a client
-        """
-        logger.info("cold starting plc")
-        return self.library.Cli_PlcColdStart(self.pointer)
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, units: {units}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, units=units)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-    def plc_hot_start(self):
-        """
-        hot starts a client
-        """
-        logger.info("hot starting plc")
-        return self.library.Cli_PlcColdStart(self.pointer)
-
-    @error_wrap
-    def disconnect(self):
-        """
-        disconnect a client.
-        """
-        logger.info("disconnecting snap7 client")
-        return self.library.Cli_Disconnect(self.pointer)
+        return [result, units]
 
     @error_wrap
-    def connect(self, address, rack, slot, tcpport=102):
+    def get_opaque_data(self, opaque_id):
         """
-        Connect to a S7 server.
-
-        :param address: IP address of server
-        :param rack: rack on server
-        :param slot: slot on server.
+        RetVal GetOpaqueData    ( dbHandle handle, cdbID opaqueId, OpaqueDataPtr opaqueData )
+        This function returns an OpaqueData structure for a defined id.
+        Please note: The field binary is being allocated in the memory by the DLL and must be released by the user of the DLL.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            opaqueId is the id of the record to be read.
+            opaqueData is a pointer on an OpaqueData structure, which is filled, if the returncode is 0. The structure must be defined in the calling program.
+            typedef struct OpaqueData {
+                cdbID    id;            // Id of Record
+                idbID    mimeTypeId;        // Id of associated mime type
+                int      binLength;        // Length of binary data
+                void     *binary;        // Pointer to binary data
+                char    description[514];    // Translated description
+            } *OpaqueDataPtr;
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+            1403    Record does not exist
+        
+        
+        @return opaque_data - hash of opaque_data   
         """
-        logger.debug("connecting to %s:%s rack %s slot %s" % (address, tcpport,
-                                                             rack, slot))
+        operation = "Getting opqaue data"
+        logger.debug("{operation} {name}. Handle: {handle}, opaque_id: {opaque_id}".format(operation=operation, name=__name__, handle=self.db_handle, opaque_id=opaque_id))
+        
+        opaqueDataPtr = pointer(OpaqueDataPtr())
+        result = self.library.GetOpaqueData(self.db_handle, opaque_id, byref(opaqueDataPtr))
+        for item in opaqueDataPtr:
+            if item.contents is None:
+                break
+            opaque_data = {
+                    'id': item.contents.id, 
+                    'mimeTypeId': item.contents.mimeTypeId,
+                    'binLength': item.contents.binLength,
+                    'binary': item.contents.binary,
+                    'description': item.contents.description,
+            }
+            #opaque_data[item.contents.id] = lang
 
-        self.set_param(snap7.snap7types.RemotePort, tcpport)
-        return self.library.Cli_ConnectTo(
-            self.pointer, c_char_p(six.b(address)),
-            c_int(rack), c_int(slot))
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, opaque_id: {opaque_id}, opaque_data: {opaque_data}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, opaque_id=opaque_id, opaque_data=opaque_data)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-    def db_read(self, db_number, start, size):
-        """This is a lean function of Cli_ReadArea() to read PLC DB.
+        return [result, opaque_data]
 
-        :returns: user buffer.
-        """
-        logger.debug("db_read, db_number:%s, start:%s, size:%s" %
-                     (db_number, start, size))
 
-        type_ = snap7.snap7types.wordlen_to_ctypes[snap7.snap7types.S7WLByte]
-        data = (type_ * size)()
-        result = (self.library.Cli_DBRead(
-            self.pointer, db_number, start, size,
-            byref(data)))
-        check_error(result, context="client")
-        return bytearray(data)
+    def get_opaque_data_result(self, opaque_id):
+        #TODO: implement
+        pass
+
+    def new_opaque_data(self, opaque_data):
+        #TODO: implement
+        pass
+
+    def new_opaque_data_result(self, opaque_data):
+        #TODO: implement
+        pass
+
+    def set_opaque_data(self, opaque_data):
+        #TODO: implement
+        pass
+
+    def set_opaque_data_result(self, opaque_data):
+        #TODO: implement
+        pass
+
+    def delete_opaque_data(self, opaque_id):
+        #TODO: implement
+        pass
+
+    def delete_opaque_data_result(self, opaque_id):
+        #TODO: implement
+        pass
 
     @error_wrap
-    def db_write(self, db_number, start, data):
+    def get_mime_types(self):
         """
-        Writes to a DB object.
-
-        :param start: write offset
-        :param data: bytearray
+        RetVal GetMimeTypes ( dbHandle handle, MimeTypePtr **mimeTypes, int *countPtr )
+        
+        This function returns all available MIME types. The corresponding id's can be used in the OpaqueData structure.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            mimeTypes is a pointer in which the Mime types are returned as an array of pointers on MimeType structures, if the returncode is 0.
+            typedef struct MimeType {
+                idbID    id;            // Id of record
+                char    mimeType[130];    // Mimetype (image/jpeg)
+                char    description[514];    // Translated description
+            } *MimeTypePtr;
+            countPtr is a pointer on an Integer, which returns the number of records in *mimeTypes, if the returncode is 0.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        
+        @return mime_types - hash of mime_types   
         """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        size = len(data)
-        cdata = (type_ * size).from_buffer(data)
-        logger.debug("db_write db_number:%s start:%s size:%s data:%s" %
-                     (db_number, start, size, data))
-        return self.library.Cli_DBWrite(self.pointer, db_number, start, size,
-                                        byref(cdata))
+        operation = "Getting All MIME types"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        mimeTypePtr = pointer(MimeTypePtr())
+        result = self.library.GetMimeTypes(self.db_handle, byref(mimeTypePtr), byref(countPtr))
+        count = countPtr.value
+        mime_types = {}
+        for item in mimeTypePtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                    'id': item.contents.id, 
+                    'mimeType': item.contents.mimeType,
+                    'description': item.contents.description,
+            }
+            mime_types[item.contents.id] = entry
 
-    def full_upload(self, _type, block_num):
-        """
-        Uploads a full block body from AG.
-        The whole block (including header and footer) is copied into the user
-        buffer.
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, mime_types: {mime_types}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, mime_types=mime_types)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-        :param block_num: Number of Block
-        """
-        _buffer = buffer_type()
-        size = c_int(sizeof(_buffer))
-        block_type = snap7.snap7types.block_types[_type]
-        result = self.library.Cli_FullUpload(self.pointer, block_type,
-                                             block_num, byref(_buffer),
-                                             byref(size))
-        check_error(result, context="client")
-        return bytearray(_buffer), size.value
+        return [result, mime_types]
 
-    def upload(self, block_num):
-        """
-        Uploads a block body from AG
 
-        :param data: bytearray
-        """
-        logger.debug("db_upload block_num: %s" % (block_num))
-
-        block_type = snap7.snap7types.block_types['DB']
-        _buffer = buffer_type()
-        size = c_int(sizeof(_buffer))
-
-        result = self.library.Cli_Upload(self.pointer, block_type, block_num,
-                                         byref(_buffer), byref(size))
-
-        check_error(result, context="client")
-        logger.info('received %s bytes' % size)
-        return bytearray(_buffer)
+    def update_wabco_number(self):
+        #TODO: implement
+        pass
 
     @error_wrap
-    def download(self, data, block_num=-1):
+    def get_systems(self):
         """
-        Downloads a DB data into the AG.
-        A whole block (including header and footer) must be available into the
-        user buffer.
-
-        :param block_num: New Block number (or -1)
-        :param data: the user buffer
+        RetVal GetSystems ( dbHandle handle, SystemPtr **systems, int *countPtr )
+        
+        This function returns all available systems.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            systems is a pointer in which the systems are returned as an array of pointers on system structures, if the returncode is 0.
+            typedef struct System {
+                idbID    id;            // Id of Record    
+                char    name[52];        // Name of system
+            } *SystemPtr;
+            countPtr is a pointer on an Integer, which returns the number of records in *systems, if the Returncode is 0.
+        
+        Returncodes:
+            0    No Error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        
+        @return systems - hash of systems   
         """
-        type_ = c_byte
-        size = len(data)
-        cdata = (type_ * len(data)).from_buffer(data)
-        result = self.library.Cli_Download(self.pointer, block_num,
-                                           byref(cdata), size)
-        return result
+        operation = "Getting All Systems"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        systemPtr = pointer(SystemPtr())
+        result = self.library.GetSystems(self.db_handle, byref(systemPtr), byref(countPtr))
+        count = countPtr.value
+        systems = {}
+        for item in systemPtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                    'id': item.contents.id, 
+                    'name': item.contents.name,
+            }
+            systems[item.contents.id] = entry
 
-    def db_get(self, db_number):
-        """Uploads a DB from AG.
-        """
-        # logger.debug("db_get db_number: %s" % db_number)
-        _buffer = buffer_type()
-        bufferSize = c_int(snap7.snap7types.buffer_size)
-        result = self.library.Cli_DBGet(
-            self.pointer, db_number, byref(_buffer),
-            byref(bufferSize))
-        check_error(result, context="client")
-        msg = bytearray(_buffer[:bufferSize.value])
-        return msg
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, systems: {systems}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, systems=systems)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-    def read_area(self, area, dbnumber, start, size):
-        """This is the main function to read data from a PLC.
-        With it you can read DB, Inputs, Outputs, Merkers, Timers and Counters.
+        #return systems
+        return [result, systems]
 
-        :param dbnumber: The DB number, only used when area= S7AreaDB
-        :param start: offset to start writing
-        :param size: number of units to read
-        """
-        assert area in snap7.snap7types.areas.values()
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        logger.debug("reading area: %s dbnumber: %s start: %s: amount %s: wordlen: %s" % (area, dbnumber, start, size, wordlen))
-        data = (type_ * size)()
-        result = self.library.Cli_ReadArea(self.pointer, area, dbnumber, start,
-                                           size, wordlen, byref(data))
-        check_error(result, context="client")
-        return bytearray(data)
 
     @error_wrap
-    def write_area(self, area, dbnumber, start, data):
-        """This is the main function to write data into a PLC. It's the
-        complementary function of Cli_ReadArea(), the parameters and their
-        meanings are the same. The only difference is that the data is
-        transferred from the buffer pointed by pUsrData into PLC.
-
-        :param dbnumber: The DB number, only used when area= S7AreaDB
-        :param start: offset to start writing
-        :param data: a bytearray containing the payload
+    def get_system(self, system_id):
         """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        size = len(data)
-        logger.debug("writing area: %s dbnumber: %s start: %s: size %s: type: %s" % (area, dbnumber, start, size, type_))
-        cdata = (type_ * len(data)).from_buffer(data)
-        return self.library.Cli_WriteArea(self.pointer, area, dbnumber, start,
-                                          size, wordlen, byref(cdata))
-
-    def read_multi_vars(self, items):
-        """This function read multiple variables from the PLC.
-
-        :param items: list of S7DataItem objects
-        :returns: a tuple with the return code and a list of data items
+        RetVal GetSystem ( dbHandle handle, idbID systemId, SystemPtr system )
+        This function returns a system structure for a defined id.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            systemId is the id of the record that should be read.
+            system is a pointer on a system structure, which is filled when the Returncode is 0. The structure must be defined in the calling program.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+            1403    Record not found
+        
+        @return system - hash of system
         """
-        result = self.library.Cli_ReadMultiVars(self.pointer, byref(items),
-                                                c_int32(len(items)))
-        check_error(result, context="client")
-        return result, items
+        operation = "Getting system"
+        logger.debug("{operation} {name}. Handle: {handle}, system_id: {system_id}".format(operation=operation, name=__name__, handle=self.db_handle, system_id=system_id))
+        
+        system_buf = System()
+        result = self.library.GetSystem(self.db_handle, system_id, byref(system_buf))
+        system = {
+                'id': system_buf.id, 
+                'name': system_buf.name,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, system_id: {system_id}, system: {system}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, system_id=system_id, system=system)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-    def list_blocks(self):
-        """Returns the AG blocks amount divided by type.
+        return [result, system]
 
-        :returns: a snap7.types.BlocksList object.
-        """
-        # logger.debug("listing blocks")
-        blocksList = BlocksList()
-        result = self.library.Cli_ListBlocks(self.pointer, byref(blocksList))
-        check_error(result, context="client")
-        logger.debug("blocks: %s" % blocksList)
-        return blocksList
+    def start_idle_time(self):
+        #TODO: implement
+        pass
 
-    def list_blocks_of_type(self, blocktype, size=1024):
-        """This function returns the AG list of a specified block type."""
-        # logger.debug("listing blocks of type: %s size: %s" % (blocktype, size))
-        _buffer = (snap7.types.word * size)()
-        count = c_int(size)
-        result = self.library.Cli_ListBlocksOfType(
-            self.pointer, blocktype,
-            byref(_buffer),
-            byref(count))
-
-        # logger.debug("number of items found: %s" % count.value)
-        check_error(result, context="client")
-        return _buffer[:count.value]
+    def end_idle_time(self):
+        #TODO: implement
+        pass
 
     @error_wrap
-    def set_session_password(self, password):
-        """Send the password to the PLC to meet its security level."""
-        assert len(password) <= 8, 'maximum password length is 8'
-        return self.library.Cli_SetSessionPassword(self.pointer,
-                                                   c_char_p(six.b(password)))
+    def identify_me(self, system_name, wabco_number, process_sequence, process_id):
+        """
+        RetVal IdentifyMe    ( dbHandle handle, char *systemName, 
+                char *wabcoNumber, int processSequence, 
+                idbID processId, IdentificationPtr myIdent )
+        This function serves for identifying a system, if for example, the name and the Wabco Number of the tested part, or the process id and the sequential number in a process are known. 
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            systemName is the name of the system, as it is deposited in the database. If unknown, NULL must be passed.
+            wabcoNumber is a known Wabco number in the database. If unknown, NULL must be passed.
+            processSequence is the sequential Number in the process. If unknown, 0 must be passed.
+            processId is the according process id. If unknown, 0 must be passed.
+            
+            myIdent is a pointer on an identification structure, if the returncode is 0. The structure must be defined in the calling program. The function tries to identify the system definitely under the aid of the passed parameter, in order to return the resulting id's in MyIdent.
+            typedef struct Identification {
+                idbID    processId;        // This process
+                idbID    systemId;        // This system
+                idbID    processStepId;    // The process step id
+                idbID    wabcoPartId;    // The Wabco part id 
+            }  *IdentificationPtr;.
+            The function tries to identify the system from the following combinations of the parameter:
+            systemName, 
+            processId, 
+            systemName and wabcoNumber, 
+            processId and processSequence 
+            or from all 4 parameter.
+            The more parameters are set, the bigger is the chance, that the system can be identified.
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error Code
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+            232 (ERROR_NO_DATA) in case that the system cannot be identified definitely.
+        
+        @return identification - hash
+        """
+        operation = "IdentifyMe"
+        logger.debug("{operation} {name}. Handle: {handle}, system_name: {system_name}, wabco_number: {wabco_number}, process_sequence: {process_sequence}, process_id: {process_id}".format(operation=operation, name=__name__, handle=self.db_handle, system_name=system_name, wabco_number=wabco_number, process_sequence=process_sequence, process_id=process_id))
+        
+        identification_buf = Identification()
+        result = self.library.IdentifyMe(self.db_handle, system_name, wabco_number, process_sequence, process_id, byref(identification_buf))
+        identification = {
+                'processId': identification_buf.processId, 
+                'systemId': identification_buf.systemId,
+                'processStepId': identification_buf.processStepId,
+                'wabcoPartId': identification_buf.wabcoPartId,
+        }
+            
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, system_name: {system_name}, wabco_number: {wabco_number}, process_sequence: {process_sequence}, process_id: {process_id}, identification: {identification}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, system_name=system_name, wabco_number=wabco_number, process_sequence=process_sequence, process_id=process_id, identification=identification)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))
+            
+        return [result, identification]    
+
 
     @error_wrap
-    def clear_session_password(self):
-        """Clears the password set for the current session (logout)."""
-        return self.library.Cli_ClearSessionPassword(self.pointer)
+    def get_production_lines(self):
+        """
+        RetVal GetProductionLines ( dbHandle handle, ProductionLinePtr **productionlines, int *countPtr )
+        This function returns all available production lines.
+        Parameter:
+            handle is an Integer, that is returned by the function Login() when a new connection is created.
+            productionlines is a pointer in which the production lines are returned as an array of pointers on ProductionLine structures, if the returncode is 0.
+            typedef struct ProductionLine {
+                idbID    id;                // Id of Record    
+                char    description[514];        // Translated description
+            } *ProductionLinePtr;
+            countPtr is a pointer on an Integer, which returns the number of records in *productionlines, if the Returncode is 0.
+        Returncodes:
+            0    No Error
+            < 0    ORACLE Error code
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+        
+        @return systems - hash of systems   
+        """
+        operation = "Getting All Production Lines"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        productionLinePtr = pointer(ProductionLinePtr())
+        result = self.library.GetProductionLines(self.db_handle, byref(productionLinePtr), byref(countPtr))
+        count = countPtr.value
+        production_lines = {}
+        for item in productionLinePtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                    'id': item.contents.id, 
+                    'description': item.contents.description,
+            }
+            production_lines[item.contents.id] = entry
 
-    def set_connection_params(self, address, local_tsap, remote_tsap):
-        """
-        Sets internally (IP, LocalTSAP, RemoteTSAP) Coordinates.
-        This function must be called just before Cli_Connect().
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, production_lines: {production_lines}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, production_lines=production_lines)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-        :param address: PLC/Equipment IPV4 Address, for example "192.168.1.12"
-        :param local_tsap: Local TSAP (PC TSAP)
-        :param remote_tsap: Remote TSAP (PLC TSAP)
-        """
-        assert re.match(ipv4, address), '%s is invalid ipv4' % address
-        result = self.library.Cli_SetConnectionParams(self.pointer, address,
-                                                      c_uint16(local_tsap),
-                                                      c_uint16(remote_tsap))
-        if result != 0:
-            raise Snap7Exception("The parameter was invalid")
+        #return systems
+        return [result, production_lines]
 
-    def set_connection_type(self, connection_type):
-        """
-        Sets the connection resource type, i.e the way in which the Clients
-        connects to a PLC.
-
-        :param connection_type: 1 for PG, 2 for OP, 3 to 10 for S7 Basic
-        """
-        result = self.library.Cli_SetConnectionType(self.pointer,
-                                                    c_uint16(connection_type))
-        if result != 0:
-            raise Snap7Exception("The parameter was invalid")
-
-    def get_connected(self):
-        """
-        Returns the connection status
-
-        :returns: a boolean that indicates if connected.
-        """
-        connected = c_int32()
-        result = self.library.Cli_GetConnected(self.pointer, byref(connected))
-        check_error(result, context="client")
-        return bool(connected)
-
-    def ab_read(self, start, size):
-        """
-        This is a lean function of Cli_ReadArea() to read PLC process outputs.
-        """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        data = (type_ * size)()
-        logger.debug("ab_read: start: %s: size %s: " % (start, size))
-        result = self.library.Cli_ABRead(self.pointer, start, size,
-                                         byref(data))
-        check_error(result, context="client")
-        return bytearray(data)
-
-    def ab_write(self, start, data):
-        """
-        This is a lean function of Cli_WriteArea() to write PLC process
-        outputs
-        """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        size = len(data)
-        cdata = (type_ * size).from_buffer(data)
-        logger.debug("ab write: start: %s: size: %s: " % (start, size))
-        return self.library.Cli_ABWrite(
-            self.pointer, start, size, byref(cdata))
-
-    def as_ab_read(self, start, size):
-        """
-        This is the asynchronous counterpart of client.ab_read().
-        """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        data = (type_ * size)()
-        logger.debug("ab_read: start: %s: size %s: " % (start, size))
-        result = self.library.Cli_AsABRead(self.pointer, start, size,
-                                           byref(data))
-        check_error(result, context="client")
-        return bytearray(data)
-
-    def as_ab_write(self, start, data):
-        """
-        This is the asynchronous counterpart of Cli_ABWrite.
-        """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        size = len(data)
-        cdata = (type_ * size).from_buffer(data)
-        logger.debug("ab write: start: %s: size: %s: " % (start, size))
-        return self.library.Cli_AsABWrite(
-            self.pointer, start, size, byref(cdata))
 
     @error_wrap
-    def as_compress(self, time):
+    def get_production_line(self, production_line_id):
         """
-        This is the asynchronous counterpart of client.compress().
+        RetVal GetProductionLine ( dbHandle handle, idbID productionlineId, ProductionLinePtr productionline )
+        This function returns a productionline structure for a defined id.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            productionlineId is the id of the record that should be read.
+            productionline is a pointer on a productionline structure, which is filled when the Returncode is 0. The structure must be defined in the calling program.
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+            1403    Record not found
+        
+        @return production_line - hash
         """
-        return self.library.Cli_AsCompress(self.pointer, time)
+        operation = "Getting production_line"
+        logger.debug("{operation} {name}. Handle: {handle}, production_line_id: {production_line_id}".format(operation=operation, name=__name__, handle=self.db_handle, production_line_id=production_line_id))
+        
+        buf = ProductionLine()
+        result = self.library.GetProductionLine(self.db_handle, production_line_id, byref(buf))
+        ret = {
+                'id': buf.id, 
+                'description': buf.description,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, production_line_id: {production_line_id}, production_line: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, production_line_id=production_line_id, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
 
-    def copy_ram_to_rom(self):
-        """
+        return [result, ret]
 
-        """
-        return self.library.Cli_AsCopyRamToRom(self.pointer)
-
-    def as_ct_read(self):
-        """
-
-        """
-        return self.library.Cli_AsCTRead(self.pointer)
-
-    def as_ct_write(self):
-        """
-
-        """
-        return self.library.Cli_AsCTWrite(self.pointer)
-
-    def as_db_fill(self):
-        """
-
-        """
-        return self.library.Cli_AsDBFill(self.pointer)
-
-    def as_db_get(self, db_number):
-        """
-        This is the asynchronous counterpart of Cli_DBGet.
-        """
-        # logger.debug("db_get db_number: %s" % db_number)
-        _buffer = buffer_type()
-        bufferSize = c_int(snap7.snap7types.buffer_size)
-        result = self.library.Cli_AsDBGet(self.pointer, db_number, byref(_buffer), byref(bufferSize))
-        check_error(result, context="client")
-        msg = bytearray(_buffer[:bufferSize.value])
-        return msg
-
-    def as_db_read(self, db_number, start, size):
-        """
-        This is the asynchronous counterpart of Cli_DBRead.
-
-        :returns: user buffer.
-        """
-        # logger.debug("db_read, db_number:%s, start:%s, size:%s" % (db_number, start, size))
-
-        type_ = snap7.snap7types.wordlen_to_ctypes[snap7.snap7types.S7WLByte]
-        data = (type_ * size)()
-        result = (self.library.Cli_AsDBRead(self.pointer, db_number, start, size, byref(data)))
-        check_error(result, context="client")
-        return bytearray(data)
-
-    def as_db_write(self, db_number, start, data):
-        """
-
-        """
-        wordlen = snap7.snap7types.S7WLByte
-        type_ = snap7.snap7types.wordlen_to_ctypes[wordlen]
-        size = len(data)
-        cdata = (type_ * size).from_buffer(data)
-        logger.debug("db_write db_number:%s start:%s size:%s data:%s" %
-                     (db_number, start, size, data))
-        return self.library.Cli_AsDBWrite(self.pointer, db_number, start, size, byref(cdata))
-
-    @error_wrap
-    def as_download(self, data, block_num=-1):
-        """
-        Downloads a DB data into the AG asynchronously.
-        A whole block (including header and footer) must be available into the
-        user buffer.
-
-        :param block_num: New Block number (or -1)
-        :param data: the user buffer
-        """
-        size = len(data)
-        type_ = c_byte * len(data)
-        cdata = type_.from_buffer(data)
-        return self.library.Cli_AsDownload(self.pointer, block_num,
-                                           byref(cdata), size)
-
-    @error_wrap
-    def compress(self, time):
-        """
-        Performs the Memory compress action.
-
-        :param time: Maximum time expected to complete the operation (ms).
-        """
-        return self.library.Cli_Compress(self.pointer, time)
-
-    @error_wrap
-    def set_param(self, number, value):
-        """Sets an internal Server object parameter.
-        """
-        logger.debug("setting param number %s to %s" % (number, value))
-        type_ = param_types[number]
-        return self.library.Cli_SetParam(self.pointer, number,
-                                         byref(type_(value)))
-
-    def get_param(self, number):
-        """Reads an internal Client object parameter.
-        """
-        logger.debug("retrieving param number %s" % number)
-        type_ = param_types[number]
-        value = type_()
-        code = self.library.Cli_GetParam(self.pointer, c_int(number),
-                                         byref(value))
-        check_error(code)
-        return value.value
-
-    def get_plc_date_time(self):
-        """
-        Gets the time structure from PLC and transforms it to python's time.struct_time
-
-        # internal PLC DateTime struct
-        typedef struct
-        {
-          int   tm_sec;
-          int   tm_min;
-          int   tm_hour;
-          int   tm_mday;
-          int   tm_mon;
-          int   tm_year;
-          int   tm_wday;
-          int   tm_yday;
-          int   tm_isdst;
-        }tm;
-        """
-        logger.debug("retrieving DateTime from PLC")
-        result = self.library.Cli_GetPlcDateTime(self.pointer, byref(time_struct_buf))
-        check_error(result, context="client")
-        st = snap7.util.bytearray_2_time_struct(time_struct_buf)
-        logger.debug("DateTime from PLC received %s", st)
-        return st
-
-    @error_wrap
-    def set_plc_date_time(self, dtime):
-        """
-        Sets the time to given value.
-        Use datetime.datetime as input format.
-        """
-
-        logger.debug("Setting system Date/Time on PLC to: %s" % (dtime))
-        buf = snap7.util.time_struct_2_bytearray(dtime)
-        return self.library.Cli_SetPlcDateTime(self.pointer, byref(buf))
-
-    @error_wrap
-    def set_plc_system_date_time(self):
-        """
-        Synchronizes OS time with PLC
-        """
-        import datetime
-        logger.debug("Updating System DateTime to PLC: (PC->PLC) %s" % datetime.datetime.now())
-        return self.library.Cli_SetPlcSystemDateTime(self.pointer)
-'''
