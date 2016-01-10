@@ -745,3 +745,535 @@ class Client(object):
 
         return [result, ret]
 
+    @error_wrap
+    def get_wabco_parts(self):
+        """
+        RetVal GetWabcoParts ( dbHandle handle, WabcoPartPtr **wabcoParts, int *countPtr )
+        This function returns all available parts, sorted alphabetically by the Wabco Number. 
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            wabcoParts is a pointer in which the Parts are being returned in an array of pointers on WabcoPart structures, if the returncode is 0.
+            typedef struct WabcoPart {
+                idbID    id;            // Id of record
+                idbID    workCenterId;    // Id of work center
+                cdbID    contentId;        // Id of binary data
+                cdbID    previewId;        // Id of preview for above binary
+                char    mdReason[514];    // Reason of last change
+                char    mdUser[22];        // Last changed by user
+                char    mdTime[24];        // Date of last change
+                char    productName[52];    // Name of the product
+                char    wabcoNumber[12];    // The Wabco Number
+            } *WabcoPartPtr;
+            countPtr is a pointer on an Integer in which the number of records in *wabcoParts is being returned, if the returncode is 0.
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        
+        @return parts - hash   
+        """
+        operation = "Reading all Parts"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        wabcoPartPtr = pointer(WabcoPartPtr())
+        result = self.library.GetWabcoParts(self.db_handle, byref(wabcoPartPtr), byref(countPtr))
+        count = countPtr.value
+        parts = {}
+        for item in wabcoPartPtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                'id': item.contents.id, 
+                'workCenterId': item.contents.workCenterId,
+                'contentId': item.contents.contentId,
+                'previewId': item.contents.previewId,
+                'mdReason': item.contents.mdReason,
+                'mdUser': item.contents.mdUser,
+                'mdTime': item.contents.mdTime,
+                'productName': item.contents.productName,
+                'wabcoNumber': item.contents.wabcoNumber,
+            }
+            parts[item.contents.id] = entry
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, parts: {parts}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, parts=parts)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return systems
+        return [result, parts]
+
+
+    @error_wrap
+    def get_wabco_part(self, wabco_part_id):
+        """
+        RetVal GetWabcoPart ( dbHandle handle, idbID wabcoPartId, WabcoPartPtr wabcoPart )
+        This function returns a WabcoPart structure for a defined Id.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            wabcoPartId != -1 then it is the ID of the part to be read.
+            wabcoPartId == -1 then return wabcoPart for defined wabcoPart.wabco_number  by calling program.
+            wabcoPart is a pointer on a WabcoPart structure, if the returncode is 0. The structure must be defined in the calling program.
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+            1403    Record not found
+        
+        @return wabco_part - hash
+        """
+        operation = "Reading a Part"
+        logger.debug("{operation} {name}. Handle: {handle}, wabco_part_id: {wabco_part_id}".format(operation=operation, name=__name__, handle=self.db_handle, wabco_part_id=wabco_part_id))
+        
+        buf = WabcoPart()
+        result = self.library.GetWabcoPart(self.db_handle, wabco_part_id, byref(buf))
+        ret = {
+                'id': buf.id, 
+                'workCenterId': buf.workCenterId,
+                'contentId': buf.contentId,
+                'previewId': buf.previewId,
+                'mdReason': buf.mdReason,
+                'mdUser': buf.mdUser,
+                'mdTime': buf.mdTime,
+                'productName': buf.productName,
+                'wabcoNumber': buf.wabcoNumber,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, wabco_part_id: {wabco_part_id}, wabco_part: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, wabco_part_id=wabco_part_id, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return [result, ret]
+
+    
+    def new_wabco_part(self, wabco_part):
+        #TODO: implement
+        pass
+
+        
+    def new_wabco_part_process(self, wabco_part_id, process_id):
+        #TODO: implement
+        pass
+    
+    @error_wrap
+    def get_processes(self):
+        """
+        RetVal GetProcesses ( dbHandle handle, ProcessPtr **processes, int *countPtr )
+        This function returns all released processes, sorted by their Id. 
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            processes is a pointer in which the processes are returned as an array of pointers on process structures, if the returncode is 0.
+            typedef struct Process {
+                idbID    id;            // Id of record
+                idbID    productionLineId;    // Id of production line
+                idbID    releaseId;        // Id of release status
+                cdbID    contentId;        // Id of binary data
+                cdbID    previewId;        // Id of preview for binary
+                char    mdReason[514];    // Reason for last change
+                char    mdUser[22];        // Last change by user
+                char    mdTime[24];        // Date of last change
+                char    description[514];    // Translated description
+            } *ProcessPtr;
+            countPtr is a pointer on an Integer in which the number of records in *processes is being returned, if the returncode is 0.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+                
+        @return processes - data hash   
+        """
+        operation = "Reading all Processes"
+        logger.debug("{operation} {name}. Handle: {handle}".format(operation=operation, name=__name__, handle=self.db_handle))
+        
+        countPtr = c_int()
+        bufPtr = pointer(ProcessPtr())
+        result = self.library.GetProcesses(self.db_handle, byref(bufPtr), byref(countPtr))
+        count = countPtr.value
+        ret = {}
+        for item in bufPtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                'id': item.contents.id, 
+                'productionLineId': item.contents.productionLineId,
+                'releaseId': item.contents.releaseId,
+                'contentId': item.contents.contentId,
+                'previewId': item.contents.previewId,
+                'mdReason': item.contents.mdReason,
+                'mdUser': item.contents.mdUser,
+                'mdTime': item.contents.mdTime,
+                'description': item.contents.description,
+            }
+            ret[item.contents.id] = entry
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, ret]
+
+
+    @error_wrap
+    def get_process(self, ident):
+        """
+        RetVal GetProcess ( dbHandle handle, idbID processId, ProcessPtr process )
+        This function returns a process structure for a defined Id, if this process is released.
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            processId is the Id of the process to be read.
+            process is a pointer on a process structure, which is filled when the Returncode is 0. The structure must be defined in the calling program.
+            
+        Returncodes:
+            0    No Error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+            1403    Record not found
+        
+        @return process - data hash
+        """
+        operation = "Reading a Process"
+        logger.debug("{operation} {name}. Handle: {handle}, ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        buf = Process()
+        result = self.library.GetProcess(self.db_handle, ident, byref(buf))
+        ret = {
+                'id': buf.id, 
+                'productionLineId': buf.productionLineId,
+                'releaseId': buf.releaseId,
+                'contentId': buf.contentId,
+                'previewId': buf.previewId,
+                'mdReason': buf.mdReason,
+                'mdUser': buf.mdUser,
+                'mdTime': buf.mdTime,
+                'description': buf.description,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, ident: {ident}, ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, ident=ident, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return [result, ret]
+
+
+    @error_wrap
+    def get_wabco_part_processes(self, wabco_part_id):
+        """
+        RetVal GetWabcoPartProcesses ( dbHandle handle, idbID wabcoPartId, ProcessPtr **processes, int *countPtr )
+        
+        This function returns all released processes for a Wabco Number, sorted by their Id. 
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            wabcoPartId is the Id of the part record. It can be found for a Wabco number with the aid of the function GetWabcoParts().
+            processes is a pointer in which the processes are returned as an array of pointers on process structures, if the Returncode is 0.
+            countPtr is a pointer on an Integer in which the number of records in *processes is being returned, if the Returncode is 0.
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+                
+        @return processes - data hash   
+        """
+        operation = "Reading all processes for a Wabco Number"
+        ident = wabco_part_id
+        logger.debug("{operation} {name}. Handle: {handle} Ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        countPtr = c_int()
+        bufPtr = pointer(ProcessPtr())
+        result = self.library.GetWabcoPartProcesses(self.db_handle, ident, byref(bufPtr), byref(countPtr))
+        count = countPtr.value
+        ret = {}
+        for item in bufPtr[:count]:
+            if item.contents is None:
+                break
+            entry = {
+                'id': item.contents.id, 
+                'productionLineId': item.contents.productionLineId,
+                'releaseId': item.contents.releaseId,
+                'contentId': item.contents.contentId,
+                'previewId': item.contents.previewId,
+                'mdReason': item.contents.mdReason,
+                'mdUser': item.contents.mdUser,
+                'mdTime': item.contents.mdTime,
+                'description': item.contents.description,
+            }
+            ret[item.contents.id] = entry
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, ident: {ident} ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, ret=ret, ident=ident)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, ret]
+
+    @error_wrap
+    def get_process_steps(self, process_id):
+        """
+        RetVal GetProcessSteps    ( dbHandle handle, idbID processId, ProcessStepPtr **processSteps, int *countPtr )
+        
+        This function returns all released process steps for a defined process, sorted by their sequence. 
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            processId is the Id of the released process, for which the Process Steps should be found.
+            processSteps is a pointer in which the process steps are returned as an array of pointers on ProcessStep structures, if the returncode is 0.
+            typedef struct ProcessStep {
+                idbID    id;            // Id of record
+                idbID    processId;        // Id of the process
+                idbID    systemId;        // Id of the system record
+                idbID    releaseId;         // Id of release status
+                int    processSequence;    // Process sequence number
+                double limitYellow;    // Yellow warning level
+                double limitRed;        // red warning level
+                char    mdReason[514];    // Reason of last change
+                char    mdUser[22];        // Last change user
+                char    mdTime[24];        // Date of last change
+                char    filename[258];    // A Filenams
+                char    transfer[2];    // Transfer
+                char    description[514];    // Translated description
+            } *ProcessStepPtr;
+            countPtr is a pointer on an Integer in which the number of records in *processSteps is being returned, if the Returncode is 0.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+                
+        @return process_steps - data hash   
+        """
+        operation = "Read All Process Steps for a given process"
+        ident = process_id
+        logger.debug("{operation} {name}. Handle: {handle} Ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        countPtr = c_int()
+        bufPtr = pointer(ProcessStepPtr())
+        result = self.library.GetProcessSteps(self.db_handle, ident, byref(bufPtr), byref(countPtr))
+        count = countPtr.value
+        ret = {}
+        for item in bufPtr[:count]:
+            if item.contents is None:
+                break
+            buf = item.contents
+            entry = {
+                'id': buf.id, 
+                'processId': buf.processId,
+                'systemId': buf.systemId,
+                'releaseId': buf.releaseId,
+                'processSequence': buf.processSequence,
+                'limitYellow': buf.limitYellow,
+                'limitRed': buf.limitRed,
+                'mdReason': buf.mdReason,
+                'mdUser': buf.mdUser,
+                'mdTime': buf.mdTime,
+                'filename': buf.filename,
+                'transfer': buf.transfer,
+                'description': buf.description,
+            }
+            ret[buf.id] = entry
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, ident: {ident} ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, ret=ret, ident=ident)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, ret]
+
+    @error_wrap
+    def get_process_step(self, ident):
+        """
+        RetVal GetProcessStep    ( dbHandle handle, idbID processStepId, ProcessStepPtr processStep )
+        This function returns a ProcessStep structure for a defined Id, if the Process Step is released.
+        Attention: This function takes the IGNORERELEASEID preference into account.
+        Parameter:
+        handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+        processStepId is the Id of the process Step to be read.
+        processStep is a pointer on a ProcessStep structure that is filled if the returncode is 0. the structure must be defined in the calling program.
+        
+        Returncodes:
+        0    No error
+        < 0    ORACLE Error code
+        6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        1403    Record not found
+        
+        @return process_step - data hash
+        """
+        operation = "Reading a Process Step"
+        logger.debug("{operation} {name}. Handle: {handle}, ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        buf = ProcessStep()
+        result = self.library.GetProcessStep(self.db_handle, ident, byref(buf))
+        ret = {
+                'id': buf.id, 
+                'processId': buf.processId,
+                'systemId': buf.systemId,
+                'releaseId': buf.releaseId,
+                'processSequence': buf.processSequence,
+                'limitYellow': buf.limitYellow,
+                'limitRed': buf.limitRed,
+                'mdReason': buf.mdReason,
+                'mdUser': buf.mdUser,
+                'mdTime': buf.mdTime,
+                'filename': buf.filename,
+                'transfer': buf.transfer,
+                'description': buf.description,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, ident: {ident}, ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, ident=ident, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return [result, ret]
+
+
+    @error_wrap
+    def get_process_step_params(self, process_step_id):
+        #TODO: check why does not work!!! does it?
+        """
+        RetVal GetProcessStepParams    ( dbHandle handle, idbID processStepId, ProcessStepParamPtr **processStepParams, int *countPtr )
+        
+        This function returns all process step parameter for a defined Process Step, sorted by their sequence. Please note: For a correct behaviour concerning the legacy data, the field HISTORY is analysed within the selection (HISTORY = 1).
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            processStepId is the Id of the released process step, whose process step parameter shall be found.
+            processStepParam is a pointer, in which the process step parameters are being returned in an array of pointers on ProcessStepParam structures, if the returncode is 0.
+            typedef struct ProcessStepParam {
+                idbID    id;            // Id of record
+                idbID    processStepId;    // Id of process step record
+                idbID    unitId;        // Id of unit record
+                cdbID    contentId;        // Id of binary data
+                cdbID    previewId;        // Id of preview for above binary
+                double value;        // The Value
+                char    valueText[258];    // Additional value as text
+                int    paramSequence;    // The parameter sequence number
+                int    history;        // History flag
+                char    mdReason[514];    // Reason of last change
+                char    mdUser[22];        // Last change user
+                char    mdTime[24];        // Date of last change
+                char    description[514];    // Translated description
+            } *ProcessStepParamPtr;
+            countPtr is a pointer on an Integer which returns the number of records in *processStepParams, if the returncode is 0.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+                
+        @return process_step_params - data hash   
+        """
+        operation = "Reading all Process Step Parameters"
+        ident = process_step_id
+        logger.debug("{operation} {name}. Handle: {handle} Ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        countPtr = c_int()
+        bufPtr = pointer(ProcessStepParamPtr())
+        result = self.library.GetProcessStepParams(self.db_handle, ident, byref(bufPtr), byref(countPtr))
+        count = countPtr.value
+        ret = {}
+        for item in bufPtr[:count]:
+            if item.contents is None:
+                break
+            buf = item.contents
+            entry = {
+                'id': buf.id,
+                'processStepId': buf.processStepId,
+                'unitId': buf.unitId,
+                'contentId': buf.contentId,
+                'previewId': buf.previewId,
+                'value': buf.value,
+                'valueText': buf.valueText,
+                'paramSequence': buf.paramSequence,
+                'history': buf.history,
+                'mdReason': buf.mdReason,
+                'mdUser': buf.mdUser,
+                'mdTime': buf.mdTime,
+                'description': buf.description,
+            }
+            ret[buf.id] = entry
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, count: {count}, ident: {ident} ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, count=count, ret=ret, ident=ident)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, ret]
+
+
+    @error_wrap
+    def new_process_step_param(self, process_step_param):
+        # TODO: FIXME.
+        """
+        RetVal NewProcessStepParam ( dbHandle handle, ProcessStepParamPtr processStepParam)
+        This function creates process step parameter. Fields in ProcessStepParam structure:
+            id - only returned value, nextval from PRODANG.PROCESS_STEP_PARAM_SEQ sequence
+            processStepId - ProcessStep.id
+            unitId - possible values can be read by GetUnits function, 0 = no UNIT
+            contentId - opaque_data.id; = no contentId
+            previewId - opaque_data.id; = no data previewId
+            value - value
+            valueText - text as value, no valueText
+            paramSequence - test step parameter sequence, -1 = automatic
+            history - only returned value, 0-active test value, 1-historical (not active) test value
+            mdReason -  reason of modification, mdReason=created by <actual Oracle user>
+            mdUser - only returned value, actual Oracle user
+            mdTime - only returned value, actual Oracle sysdate
+            description - description for test value, mdReason=no description
+        
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            processStepParam is a pointer on a ProcessStepParam structure, which contains the data. The structure must be defined in the calling program. It is being returned with the new record.
+        
+        Returncodes:
+            0    No error
+            < 0    ORACLE Error code
+            6 (ERROR_INVALID_HANDLE) in case of an invalid handle
+            234    (ERROR_MORE_DATA) when process step parameter with the same paramSequence exist
+                
+        @return Null   
+        """
+        operation = "Adding Process Step Parameter"
+        data = process_step_param
+        logger.debug("{operation} {name}. Handle: {handle} data: {data}".format(operation=operation, name=__name__, handle=self.db_handle, data=data))
+        
+        dataObj = ProcessStepParam(
+            id=data['id'],
+            processStepId=data['processStepId'],
+            unitId=data['unitId'],
+            contentId=data['contentId'],
+            previewId=data['previewId'],
+            value=data['value'],
+            valueText=data['valueText'],
+            paramSequence=data['paramSequence'],
+            history=data['history'],
+            mdReason=data['mdReason'],
+            mdUser=data['mdUser'],
+            mdTime=data['mdTime'],
+            description=data['description'],
+        )
+                                            
+        result = self.library.NewProcessStepParam(self.db_handle, dataObj)  
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, data: {data}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, data=data)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, None]
