@@ -1277,3 +1277,143 @@ class Client(object):
 
         #return data
         return [result, None]
+    
+    
+    @error_wrap
+    def new_product(self, wabco_part_id, serial_number, individual=1, comment="empty comment"):
+        """
+        RetVal NewProduct ( dbHandle handle, ProductPtr product )
+        RetVal NewProduct_lsn ( dbHandle handle, Product_lsnPtr product )
+
+        This function creates a new Product out of a prefilled product structure.
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            product is a pointer on a product structure, which elements must be prefilled. The structure must be defined, filled in the calling program. Before set value for struct members clean the structure ex. memset(&product, 0, sizeof(product)) , cleaning structure will set default values for optional struct members. The function checks if a product with the passed WabcoPartId and serial number already exists and returns this. In this case no new product record is created.
+            If returncode=ERROR_MORE_DATA, the existing record (for defined wabcoPartId and serialNumber) is returned unchanged.
+            If returncode=0, the new record is returned.
+
+        Required: wabcoPartId, serialNumber, individual
+        Optional: comment (default=null), crProcessStepId (default=null), crTime (default=sysdate), mdTime (default=crTime)
+        Returncodes:
+            0        No error
+            234      (ERROR_MORE_DATA) in case that the product already exists. This is no error and the product structure is returned with the existing product. 
+            < 0      ORACLE Error code
+            6        (ERROR_INVALID_HANDLE) in case of an invalid handle                
+        @return Null   
+        """
+        operation = "Adding Product"
+        data = str(wabco_part_id) + str(serial_number)
+        logger.debug("{operation} {name}. Handle: {handle} data: {data}".format(operation=operation, name=__name__, handle=self.db_handle, data=data))
+
+        """
+            /*
+            Product generating
+                Required: wabcoPartId, serialNumber, individual
+                Optional: comment (default=null), crProcessStepId (default=null), crTime (default=sysdate), mdTime (default=crTime)
+            */
+            memset(&product, 0, sizeof(product)); // clear product structure
+            product.wabcoPartId=ident.wabcoPartId; // set wabco part id
+            strcpy(product.serialNumber,serial_number); // serial number for product
+            product.individual=1; // set whether product is with SN (individual=1) or without SN (individual=0)
+            product.crProcessStepId=ident.processStepId; // set creating process step
+            strcpy(product.comment,"added from test program, v. 1.234"); // comment for product, ex. version of test program
+        
+            r = NewProduct_lsn(h1,&product); // create product        
+        """
+        
+        dataObj = Product( 
+                    wabcoPartId = wabco_part_id,
+                    serialNumber = serial_number,
+                    individual = individual, 
+                    comment = comment,
+        )
+        
+        print dataObj
+        result = self.library.NewProduct_lsn(self.db_handle, dataObj)  
+
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, data: {data}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, data=data)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        #return data
+        return [result, None]
+
+    
+    @error_wrap
+    def get_product(self, wabco_part_id, serial_number):
+        """
+        RetVal GetProduct    ( dbHandle handle, idbID wabcoPartId, 
+        char* serialNumber, ProductPtr product )
+        RetVal GetProduct_lsn    ( dbHandle handle, idbID wabcoPartId, 
+        char* serialNumber, Product_lsnPtr product )
+
+        This function returns a product structure for a product, which can be defined in three ways:
+        1. wabcoPartId != -1 then search using wabcoPartId and serialNumber
+        2. wabcoPartId == -1and product->id !='' then search using product->id
+        3. wabcoPartId == -1and product->id =='' then search using serialNumber
+        Important information: The field 'individual' was taken over from the field 'allgemein' of the legacy data directly. Because of this most products have the value 0 further on and only a few the value 1. 
+        
+        Parameter:
+            handle is an Integer, which is returned by the function Login() at the creation of a new connection.
+            wabcoPartId is the Id of the part.
+            serialNumber is the serial number of the product for the part above.
+            product is a pointer on a product structure, which is filled if the returncode is 0. The structure must be defined in the calling program.
+            typedef struct Product {
+                cdbID    id;            // Id of record
+                idbID    wabcoPartId;    // Id of Wabco Part record
+                char    serialNumber[32];    // Serial number
+                char    comment[258];    // A comment
+                int    individual;        // Individual flag
+                idbID    crProcessStepId;    // Id of creating process step
+                idbID    mdProcessStepId;    // Id of modifying process step
+                char    crTime[24];        // Date of creation
+                char    mdTime[24];        // Date of last change
+            } *ProductPtr;
+            typedef struct Product_lsn {
+                cdbID    id;            // Id of record
+                idbID    wabcoPartId;    // Id of Wabco Part record
+                char    serialNumber[1002];    // Long Serial number
+                char    comment[258];    // A comment
+                int    individual;        // Individual flag
+                idbID    crProcessStepId;    // Id of creating process step
+                idbID    mdProcessStepId;    // Id of modifying process step
+                char    crTime[24];        // Date of creation
+                char    mdTime[24];        // Date of last change
+            } *Product_lsnPtr;
+
+        Returncodes:
+        0    No error
+        < 0    ORACLE Error code
+        6    (ERROR_INVALID_HANDLE) in case of an invalid handle
+        1403    Record does not exist
+        
+        @return process - data hash
+        """
+        operation = "Reading a Product"
+        ident = str(wabco_part_id) + str(serial_number)
+        logger.debug("{operation} {name}. Handle: {handle}, ident: {ident}".format(operation=operation, name=__name__, handle=self.db_handle, ident=ident))
+        
+        buf = Product()
+        result = self.library.GetProduct(self.db_handle, wabco_part_id, serial_number, byref(buf))
+        ret = {
+                'id': buf.id, 
+                'wabcoPartId': buf.wabcoPartId,
+                'serialNumber': buf.serialNumber,
+                'comment': buf.comment,
+                'individual': buf.individual,
+                'crProcessStepId': buf.crProcessStepId,
+                'mdProcessStepId': buf.mdProcessStepId,
+                'crTime': buf.crTime,
+                'mdTime': buf.mdTime,
+        }
+        log_msg = "Result: {result}, Operation:{operation}, Func_name: {name}. Handle: {handle}, ident: {ident}, ret: {ret}".format(operation=operation, result=result, name=__name__, handle=self.db_handle, ident=ident, ret=ret)
+        if result == 0:
+            logger.info("Successful. {msg}".format(msg=log_msg))
+        else: 
+            logger.error("Failed. {msg}".format(msg=log_msg))                
+
+        return [result, ret]
+    
+    

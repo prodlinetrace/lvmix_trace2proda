@@ -42,6 +42,7 @@ cdbID = (ctypes.c_char * PRODANGDLL_CDBID_SIZE)
 # connection errors:
 db_connection_errors = {
     -1017:  "Oracle error: ORA-1017 invalid username/password; logon denied (suggestion: check db_user or db_pass)",
+    -1858:  "Oracle error: ORA-1858 a non-numeric character was found where a numeric was expected",
     -12154: "Oracle error: ORA-12154 TNS: could not resolve the connect identifier specified (suggestion: check db_name, file: tnsnames.ora, file: sqlnet.ora, check ping to Oracle server)",
     -12170: "Oracle error: ORA-12170 TNS:Connect timeout occurred",
     -12541: "Oracle error: ORA-12541 TNS:no listener (host exists but is there Oracle DB? Is listener working on port defined in tnsnames.ora? suggestion: check db_name, file: tnsnames.ora)",
