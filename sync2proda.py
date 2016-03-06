@@ -33,11 +33,9 @@ def main():
     #print conf
     #logger.warning(sync.get_conf())
     wabco_id='4640062010'
-    serial = '000024'
-
-    sync.product_sync(wabco_id, serial)
-    #return 2
-    #proda_sync(wabco_id=wabco_id, serial = serial)
+    #serial = '000024'
+    #sync.product_sync(wabco_id, serial)
+    sync.sync_all_products()
 
     print "Proda Sync Program Finished"
 

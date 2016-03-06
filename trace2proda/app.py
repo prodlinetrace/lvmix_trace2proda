@@ -74,6 +74,7 @@ class Sync(object):
         item = Product.query.filter_by(type=wabco_id).filter_by(serial=serial).first()
 
         st = -1  # set status to undefined first
+        results = [0,0,0]
         for operation in item.operations.filter_by(operation_type_id=operation_id).all():
             st = operation.operation_status_id
             results = [0,0,0]
@@ -128,12 +129,13 @@ class Sync(object):
         db_user = self._config['main']['db_user'][0]
         db_pass = self._config['main']['db_pass'][0]
         db_name = self._config['main']['db_name'][0]
-        cmd = [psark_exe, '-c', 'csv_feed', '-f', csv_file, '-u', db_user, '-p', db_pass, '-d', db_name, '-w', wabco_id, '-s', "1111"]
+        cmd = [psark_exe, '-c', 'csv_feed', '-f', csv_file, '-u', db_user, '-p', db_pass, '-d', db_name, '-w', wabco_id, '-s', serial]
         logger.info("Running command: {cmd}".format(cmd=" ".join(cmd)))
-        p = subprocess.Popen(cmd)
-        out, err = p.communicate()
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err_code = p.communicate()
 
-        print out, err
+        logger.info(out)
+        return err_code
 
     def product_sync(self, wabco_id, serial):
         csv_file = self.generate_csv_file(wabco_id, serial)
@@ -143,4 +145,21 @@ class Sync(object):
             logger.error("unable to find psark csv file generated: {csv_file}".format(csv_file=csv_file))
             return 2
 
-        print self.run_psark(wabco_id, serial, csv_file)
+        return self.run_psark(wabco_id, serial, csv_file)
+
+    def sync_all_products(self):
+        #wabco_id = '4640062010'
+        # prodasync column description
+        # 0 - default
+        # 1 - ready to sync - should be set once assembly is complete
+        # 2 - sync completed successfully
+        # 3 - sync failed.
+
+        items = Product.query.filter_by(prodasync=1).order_by(Product.date_added).all()
+        logger.info("Found: {number} products to sync".format(number=len(items)))
+        for item in items:
+            logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
+            status = self.product_sync(item.type, item.serial)
+            logger.info("Finishing sync of: {id} PT: {type} SN: {sn} NEW Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
+            # TODO SET status depending on psark return code. Make sure that psark handles return codes correctly.
+            item.prodasync = 2 # does not work?
