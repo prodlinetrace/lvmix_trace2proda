@@ -43,4 +43,7 @@ class Sync(object):
         logging.root.addHandler(_fh)
 
     def get_conf(self):
-        return self._config 
+        return self._config
+
+    def get_conf_file_name(self):
+        return self._opts.config
