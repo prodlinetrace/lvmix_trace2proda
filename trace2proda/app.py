@@ -54,18 +54,62 @@ class Sync(object):
     def get_conf_file_name(self):
         return self._opts.config
 
+    def tace_to_wabco_status(self, st):
+        """
+        Statusy WABCO:
+        0 – NOK
+        1 – OK
+        2 – w trakcie produkcji
+        3 – w trakcie produkcji powtorka
+        5 – OK powtorzony
+        6 – NOK powtorzony
+        10 – przerwany test
+        11 – przerwany powtórzony
+        1000 – nie okreslony
+        Dodatkowo 100 + powyzsza wartosc dla "testowania" stanowiska – aby nie uwzgledniac w statystykach. Czyli np. sprawdzamy reaklamacje i chcemy zapisac wyniki ale nie chcemy wplywac na wskazniki
+        """
+        # TODO: implement me
+
+        return st
+
+    def wabco_to_trace_status(self, st):
+        """
+        Statusy Trace:
+            STATION_STATUS_CODES = {
+            0: {"result": "UNDEFINED", "desc": "status undefined (not present in database)"},
+            1: {"result": "OK", "desc": "Status ok"},
+            2: {"result": "NOK", "desc": "Status not ok"},
+            4: {"result": "NOTAVAILABLE", "desc": "Not present in given type"},
+            5: {"result": "REPEATEDOK", "desc": "Repeated test was ok"},
+            6: {"result": "REPEATEDNOK", "desc": "Repeated test was not ok"},
+            9: {"result": "WAITING", "desc": "status reset - PLC set status to 'WAITING' and waiting for PC response"},
+            10: {"result": "INTERRUPTED", "desc": "Test was interrupted"},
+            11: {"result": "REPEATEDINTERRUPTED", "desc": "Repeated test was interrupted"},
+            99: {"result": "VALUEERROR", "desc": "Faulty value was passed. Unable to process data."},
+        }
+        """
+        #TODO: implement me
+
+        return st
+
     def get_product_station_status(self, wabco_id, serial, station_id):
         # wabco_id = '4640062010'
         # serial = '000024'
         # station_id = 11
         item = Product.query.filter_by(type=wabco_id).filter_by(serial=serial).first()
 
-        st = -1  # set status to undefined first
+        st = 1000  # set status to undefined first
+        result = 0 # Test step result - set to failed
         for status in item.statuses.filter_by(station_id=station_id).all():
             st = status.status
+            # set result to ok - in case station status is ok or repeatedok
+            if st == 1 or st == 5:
+                result = 1
 
         # TODO implement translation from traceabitity to proda status codes.
-        return st, [st]
+        st = self.tace_to_wabco_status(st)
+
+        return st, [result]
 
     def get_product_operation_data(self, wabco_id, serial, operation_id):
         # wabco_id = '4640062010'
@@ -73,7 +117,7 @@ class Sync(object):
         # operation_id = 1480
         item = Product.query.filter_by(type=wabco_id).filter_by(serial=serial).first()
 
-        st = -1  # set status to undefined first
+        st = 1000  # set status to undefined first
         results = [0,0,0]
         for operation in item.operations.filter_by(operation_type_id=operation_id).all():
             st = operation.operation_status_id
@@ -86,6 +130,8 @@ class Sync(object):
                 results.insert(0,operation.result_1)
 
         # TODO implement translation from traceabitity to proda status codes.
+        st = self.tace_to_wabco_status(st)
+
         return st, results
 
     def generate_csv_file(self, wabco_id, serial):
@@ -146,6 +192,24 @@ class Sync(object):
             return 2
 
         return self.run_psark(wabco_id, serial, csv_file)
+
+    def prepare_products_for_proda_sync(self):
+        """
+        This function iterates over database and finds products that finished assembly process.
+        Such products are getting prodasync flag set to 1.
+        Both failed and successully completed products get synced.
+        Only products with prodasyncflag==0 should be considered.
+        Products with prodasync flag set to 1 are processed by sync_all_products method.
+
+        # prodasync flag values
+        # 0 - default
+        # 1 - ready to sync - should be set once assembly is complete
+        # 2 - sync completed successfully
+        # 3 - sync failed.
+
+        """
+        return 0
+
 
     def sync_all_products(self):
         #wabco_id = '4640062010'
