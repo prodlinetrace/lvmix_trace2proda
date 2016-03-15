@@ -53,6 +53,7 @@ class Sync(object):
     def __init__(self, argv, loglevel=logging.INFO):
         self._argv = argv
         self._opts, self._args = parse_args(self._argv)
+        self.cleaup = False
 
         # handle logging - set root logger level
         logging.root.setLevel(logging.INFO)
@@ -87,6 +88,15 @@ class Sync(object):
         # logger.addHandler(_fh)
         logging.root.addHandler(_fh)
         logger.info("Using DB file: {db}".format(db=self._config['main']['dbfile'][0]))
+        
+        # cleanup (tmp csv handling)        
+        cleanup = self._config['main']['cleanup'][0]
+        if int(cleanup) == 0:
+            self.clenup = False
+            
+        if int(cleanup) == 1:
+            self.clenup = True
+         
 
     def get_conf(self):
         return self._config
@@ -192,7 +202,7 @@ class Sync(object):
 
         return csv_file_name
 
-    def run_psark(self, wabco_id, serial, csv_file, cleanup=True):
+    def run_psark(self, wabco_id, serial, csv_file):
         psark_exe = self._config['main']['psark'][0]
         db_user = self._config['main']['db_user'][0]
         db_pass = self._config['main']['db_pass'][0]
@@ -204,7 +214,7 @@ class Sync(object):
 
         logger.info(out)
         
-        if cleanup:
+        if self.cleanup:
             os.unlink(csv_file)
             logger.debug("CSV file removed: {csv}".format(csv=csv_file))
         else:
@@ -212,7 +222,7 @@ class Sync(object):
             
         return err_code
 
-    def product_sync(self, wabco_id, serial, cleanup=True):
+    def product_sync(self, wabco_id, serial):
         csv_file = self.generate_csv_file(wabco_id, serial)
         if os.path.exists(csv_file):
             logger.info("psark csv file generated: {csv_file}".format(csv_file=csv_file))
@@ -220,7 +230,7 @@ class Sync(object):
             logger.error("unable to find psark csv file generated: {csv_file}".format(csv_file=csv_file))
             return 2
 
-        return self.run_psark(wabco_id, serial, csv_file, cleanup)
+        return self.run_psark(wabco_id, serial, csv_file)
 
     def prepare_products_for_proda_sync(self):
         """
@@ -293,7 +303,7 @@ class Sync(object):
         logger.info("Found: {number} products to sync".format(number=len(items)))
         for item in items:
             logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
-            status = self.product_sync(item.type, item.serial, False)
+            status = self.product_sync(item.type, item.serial)
             logger.info("Finished sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
             # TODO SET status depending on psark return code. Make sure that psark handles return codes correctly.
             # set to sync complete
@@ -301,7 +311,7 @@ class Sync(object):
 
             # store db session modifications to the file.
             db.session.commit()
-            
+        db.session.commit()
         logger.info("Finished sync of: {number} products.".format(number=len(items)))
             
         return 0
