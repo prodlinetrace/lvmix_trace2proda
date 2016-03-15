@@ -22,11 +22,11 @@ def get_proda_id(trace_id):
         return 0
 
 def main():
-    print "Proda Sync Program Started"
     logging.root.setLevel(logging.DEBUG)
     logger.root.setLevel(logging.DEBUG)
     logger.setLevel(logging.DEBUG)
-    logger.info("Starting main app")
+    logger.info("Proda Sync Program Started")
+    logging.info("Starting main app")
     sys.argv.append("-v")
     sync = Sync(sys.argv)
     #conf = sync.get_conf()
@@ -37,8 +37,12 @@ def main():
     #sync.product_sync(wabco_id, serial)
     sync.prepare_products_for_proda_sync()
     sync.sync_all_products()
+    #code = 8
+    #print "WABCO STATUS CODE ", code, " is: ", sync.tace_to_wabco_status(code)
 
-    print "Proda Sync Program Finished"
+    logger.info("Proda Sync Program Finished")
+    
+    
 
 if __name__ == "__main__":
     sys.exit(main())

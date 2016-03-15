@@ -5,11 +5,50 @@ import tempfile
 import csv
 import os
 import subprocess
+import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class Sync(object):
+
+    """
+    Statusy Trace:
+        0 - UNDEFINED
+        1 - OK
+        2 - NOK
+        4 - NOTAVAILABLE
+        5 - REPEATEDOK
+        6 - REPEATEDNOK
+        9 - WAITINIG
+        10 - INTERRUPTED
+        11 - REPEATEDINTERRUPTED
+        99 - VALUEERROR
+    
+    Statusy WABCO:
+        0 - NOK
+        1 - OK
+        2 - w trakcie produkcji
+        3 - w trakcie produkcji powtorka
+        5 - OK powtorzony
+        6 - NOK powtorzony
+        10 - przerwany test
+        11 - przerwany powtorzony
+        1000 - nie okreslony
+        Dodatkowo 100 + powyzsza wartosc dla 'testowania' stanowiska - aby nie uwzgledniac w statystykach. Czyli np. sprawdzamy reaklamacje i chcemy zapisac wyniki ale nie chcemy wplywac na wskazniki    
+    """
+    STATUS_CODES = [
+        {"result": "UNDEFINED", "desc": "status undefined (not present in database)", "wabco": 1000, "trace": 0},
+        {"result": "OK", "desc": "Status ok", "wabco": 1, "trace": 1},
+        {"result": "NOK", "desc": "Status not ok", "wabco": 0, "trace": 2},
+        {"result": "NOTAVAILABLE", "desc": "Not present in given type", "wabco": 4, "trace": 4},
+        {"result": "REPEATEDOK", "desc": "Repeated test was ok", "wabco": 5, "trace": 5},
+        {"result": "REPEATEDNOK", "desc": "Repeated test was not ok", "wabco": 6, "trace": 6},
+        {"result": "WAITING", "desc": "status reset - PLC set status to 'WAITING' and waiting for PC response", "wabco": 9, "trace": 9},
+        {"result": "INTERRUPTED", "desc": "Test was interrupted", "wabco": 10, "trace": 10},
+        {"result": "REPEATEDINTERRUPTED", "desc": "Repeated test was interrupted", "wabco": 11, "trace": 11},
+        {"result": "VALUEERROR", "desc": "Faulty value was passed. Unable to process data.", "wabco": 99, "trace": 99},
+    ]
 
     def __init__(self, argv, loglevel=logging.INFO):
         self._argv = argv
@@ -21,7 +60,7 @@ class Sync(object):
         logger.setLevel(loglevel)
 
         # parse config file
-        logger.info("Using config file {cfg}.".format(cfg=self._opts.config))
+        logger.info("Using config file: {cfg}.".format(cfg=self._opts.config))
         self._config = parse_config(self._opts.config)
         #_fh = TimedRotatingFileHandler(self._config['main']['logfile'][0], when="MIDNIGHT", interval=1, backupCount=30)
         _fh = logging.FileHandler(self._config['main']['logfile'][0])
@@ -47,6 +86,7 @@ class Sync(object):
         _ch.setFormatter(logging.Formatter('%(name)s - %(levelname)8s - %(message)s'))
         # logger.addHandler(_fh)
         logging.root.addHandler(_fh)
+        logger.info("Using DB file: {db}".format(db=self._config['main']['dbfile'][0]))
 
     def get_conf(self):
         return self._config
@@ -56,42 +96,24 @@ class Sync(object):
 
     def tace_to_wabco_status(self, st):
         """
-        Statusy WABCO:
-        0 – NOK
-        1 – OK
-        2 – w trakcie produkcji
-        3 – w trakcie produkcji powtorka
-        5 – OK powtorzony
-        6 – NOK powtorzony
-        10 – przerwany test
-        11 – przerwany powtórzony
-        1000 – nie okreslony
-        Dodatkowo 100 + powyzsza wartosc dla "testowania" stanowiska – aby nie uwzgledniac w statystykach. Czyli np. sprawdzamy reaklamacje i chcemy zapisac wyniki ale nie chcemy wplywac na wskazniki
+        translates trace status code to wabco status code
         """
-        # TODO: implement me
-
+        
+        for code in Sync.STATUS_CODES:
+            if st == code['trace']:
+                return code['wabco']    
         return st
-
+        
     def wabco_to_trace_status(self, st):
         """
-        Statusy Trace:
-            STATION_STATUS_CODES = {
-            0: {"result": "UNDEFINED", "desc": "status undefined (not present in database)"},
-            1: {"result": "OK", "desc": "Status ok"},
-            2: {"result": "NOK", "desc": "Status not ok"},
-            4: {"result": "NOTAVAILABLE", "desc": "Not present in given type"},
-            5: {"result": "REPEATEDOK", "desc": "Repeated test was ok"},
-            6: {"result": "REPEATEDNOK", "desc": "Repeated test was not ok"},
-            9: {"result": "WAITING", "desc": "status reset - PLC set status to 'WAITING' and waiting for PC response"},
-            10: {"result": "INTERRUPTED", "desc": "Test was interrupted"},
-            11: {"result": "REPEATEDINTERRUPTED", "desc": "Repeated test was interrupted"},
-            99: {"result": "VALUEERROR", "desc": "Faulty value was passed. Unable to process data."},
-        }
+        translates wabco status code to trace status code
         """
-        #TODO: implement me
-
+        
+        for code in Sync.STATUS_CODES:
+            if st == code['wabco']:
+                return code['trace']    
         return st
-
+        
     def get_product_station_status(self, wabco_id, serial, station_id):
         # wabco_id = '4640062010'
         # serial = '000024'
@@ -99,7 +121,7 @@ class Sync(object):
         item = Product.query.filter_by(type=wabco_id).filter_by(serial=serial).first()
 
         st = 1000  # set status to undefined first
-        result = 0 # Test step result - set to failed
+        result = 0 # Test step value result - set to failed. Result has to be either 0 (NOK) or 1 (OK). 
         for status in item.statuses.filter_by(station_id=station_id).all():
             st = status.status
             # set result to ok - in case station status is ok or repeatedok
@@ -170,7 +192,7 @@ class Sync(object):
 
         return csv_file_name
 
-    def run_psark(self, wabco_id, serial, csv_file):
+    def run_psark(self, wabco_id, serial, csv_file, cleanup=True):
         psark_exe = self._config['main']['psark'][0]
         db_user = self._config['main']['db_user'][0]
         db_pass = self._config['main']['db_pass'][0]
@@ -181,9 +203,16 @@ class Sync(object):
         out, err_code = p.communicate()
 
         logger.info(out)
+        
+        if cleanup:
+            os.unlink(csv_file)
+            logger.debug("CSV file removed: {csv}".format(csv=csv_file))
+        else:
+            logger.warn("CSV file not removed: {csv}".format(csv=csv_file))
+            
         return err_code
 
-    def product_sync(self, wabco_id, serial):
+    def product_sync(self, wabco_id, serial, cleanup=True):
         csv_file = self.generate_csv_file(wabco_id, serial)
         if os.path.exists(csv_file):
             logger.info("psark csv file generated: {csv_file}".format(csv_file=csv_file))
@@ -191,7 +220,7 @@ class Sync(object):
             logger.error("unable to find psark csv file generated: {csv_file}".format(csv_file=csv_file))
             return 2
 
-        return self.run_psark(wabco_id, serial, csv_file)
+        return self.run_psark(wabco_id, serial, csv_file, cleanup)
 
     def prepare_products_for_proda_sync(self):
         """
@@ -208,8 +237,49 @@ class Sync(object):
         # 3 - sync failed.
 
         """
-        return 0
+        
+        """
+        Osobiscie sklanialem sie w strone nastepujacego rozwiazania:
+        - zawor przeszedl stacje 55 - wyzwalaj synchronizacje
+        - Jezeli status montazu na dowolnej stacji jest NOK - montaz zostaje przerwany - wyzwalaj synchronizacje
+        - jezeli status montazu zaworu na dowolnej stacji jest OK wstrzymaj sie z syncronizacja danych do momentu az zawor dotrze do stacji 55. 
+        - jezeli status montazu zaworu na dowolnej stacji jest OK i zawor nie przeszedl przez stacje 55 w ciagu 24h - cos jest nie tak - wyzwalaj synchronizacje. 
+          
+        """
+        candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).filter_by(type="4640062010").all()  # TEST: limit to test type only 
+        #candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).all()
+        for candidate in candidates:
+            last_status = candidate.statuses.order_by(Status.id.desc()).first()
+            
+            # product just passed station 55 - trigger sync
+            if last_status is None:
+                logger.warn("Product: {product} has no status stored.".format(product=candidate.id))
+                continue
+            
+            if last_status.station_id == 55:
+                candidate.prodasync = 1
+                logger.info("Product: {product} set as ready to sync as it just passed station 55.".format(product=candidate.id))
+                continue
+                
+            # if last status is NOK set ready to sync.  
+            if last_status.status == 2:
+                candidate.prodasync = 1
+                logger.info("Product: {product} set as ready to sync due to last status set to NOK.".format(product=candidate.id))
+                continue
 
+            # product status is OK but it did not reached station 55 within 24h.
+            last_status_update = datetime.datetime.now() - datetime.datetime.strptime(last_status.date_time, '%Y-%m-%d %H:%M:%S.%f')
+            if last_status_update.days > 0:
+                candidate.prodasync = 1
+                logger.info("Product: {product} set as ready to sync as it did not reached station 55 within 24h.".format(product=candidate.id))
+                continue
+
+            # not yet ready to sync 
+            logger.info("Product: {product} is not yet ready to sync.".format(product=candidate.id))
+        
+        # store db session modifications to the file.
+        db.session.commit()
+        return 0
 
     def sync_all_products(self):
         #wabco_id = '4640062010'
@@ -223,7 +293,15 @@ class Sync(object):
         logger.info("Found: {number} products to sync".format(number=len(items)))
         for item in items:
             logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
-            status = self.product_sync(item.type, item.serial)
-            logger.info("Finishing sync of: {id} PT: {type} SN: {sn} NEW Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
+            status = self.product_sync(item.type, item.serial, False)
+            logger.info("Finished sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
             # TODO SET status depending on psark return code. Make sure that psark handles return codes correctly.
+            # set to sync complete
             item.prodasync = 2 # does not work?
+
+            # store db session modifications to the file.
+            db.session.commit()
+            
+        logger.info("Finished sync of: {number} products.".format(number=len(items)))
+            
+        return 0
