@@ -51,9 +51,12 @@ class Sync(object):
     ]
 
     def __init__(self, argv, loglevel=logging.INFO):
+        self.sync_success_count = 0
+        self.sync_failed_count = 0
+        self.time_started = datetime.datetime.now()
         self._argv = argv
         self._opts, self._args = parse_args(self._argv)
-        self.cleaup = False
+        self.cleanup = False
 
         # handle logging - set root logger level
         logging.root.setLevel(logging.INFO)
@@ -138,7 +141,6 @@ class Sync(object):
             if st == 1 or st == 5:
                 result = 1
 
-        # TODO implement translation from traceabitity to proda status codes.
         st = self.tace_to_wabco_status(st)
 
         return st, [result]
@@ -161,7 +163,6 @@ class Sync(object):
             if not operation.result_1 == operation.result_1_max == operation.result_1_min == 0:
                 results.insert(0,operation.result_1)
 
-        # TODO implement translation from traceabitity to proda status codes.
         st = self.tace_to_wabco_status(st)
 
         return st, results
@@ -209,8 +210,8 @@ class Sync(object):
         db_name = self._config['main']['db_name'][0]
         cmd = [psark_exe, '-c', 'csv_feed', '-f', csv_file, '-u', db_user, '-p', db_pass, '-d', db_name, '-w', wabco_id, '-s', serial]
         logger.info("Running command: {cmd}".format(cmd=" ".join(cmd)))
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err_code = p.communicate()
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        out, err = p.communicate()
 
         logger.info(out)
         
@@ -220,7 +221,7 @@ class Sync(object):
         else:
             logger.warn("CSV file not removed: {csv}".format(csv=csv_file))
             
-        return err_code
+        return p.returncode
 
     def product_sync(self, wabco_id, serial):
         csv_file = self.generate_csv_file(wabco_id, serial)
@@ -256,8 +257,8 @@ class Sync(object):
         - jezeli status montazu zaworu na dowolnej stacji jest OK i zawor nie przeszedl przez stacje 55 w ciagu 24h - cos jest nie tak - wyzwalaj synchronizacje. 
           
         """
-        candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).filter_by(type="4640062010").all()  # TEST: limit to test type only 
-        #candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).all()
+        #candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).filter_by(type="4640062010").all()  # TEST: limit to test type only 
+        candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).all()
         for candidate in candidates:
             last_status = candidate.statuses.order_by(Status.id.desc()).first()
             
@@ -278,7 +279,12 @@ class Sync(object):
                 continue
 
             # product status is OK but it did not reached station 55 within 24h.
-            last_status_update = datetime.datetime.now() - datetime.datetime.strptime(last_status.date_time, '%Y-%m-%d %H:%M:%S.%f')
+            try:
+                last_status_update = datetime.datetime.now() - datetime.datetime.strptime(last_status.date_time, '%Y-%m-%d %H:%M:%S.%f')
+            except ValueError, e:
+                logger.error("Unable to convert date: {date} with format '%Y-%m-%d %H:%M:%S.%f'. Set to timeout".format(date=last_status.date_time))
+                last_status_update = datetime.datetime.now() - datetime.datetime(2015, 1, 1)
+                
             if last_status_update.days > 0:
                 candidate.prodasync = 1
                 logger.info("Product: {product} set as ready to sync as it did not reached station 55 within 24h.".format(product=candidate.id))
@@ -304,14 +310,17 @@ class Sync(object):
         for item in items:
             logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
             status = self.product_sync(item.type, item.serial)
-            logger.info("Finished sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
-            # TODO SET status depending on psark return code. Make sure that psark handles return codes correctly.
-            # set to sync complete
-            item.prodasync = 2 # does not work?
-
-            # store db session modifications to the file.
+            if status == 0:
+                self.sync_success_count += 1
+                item.prodasync = 2
+                logger.info("Completed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
+            else:
+                self.sync_failed_count += 1
+                item.prodasync = 3
+                logger.error("Failed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
             db.session.commit()
+
         db.session.commit()
-        logger.info("Finished sync of: {number} products.".format(number=len(items)))
+        logger.info("Sync of {number} products finished in {time}. Stats: {failed} failed / {success} succeed.".format(number=len(items), failed=self.sync_failed_count, success=self.sync_success_count, time=datetime.datetime.now()-self.time_started))
             
         return 0
