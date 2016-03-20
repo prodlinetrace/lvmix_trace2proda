@@ -24,7 +24,7 @@ class Sync(object):
         10 - INTERRUPTED
         11 - REPEATEDINTERRUPTED
         99 - VALUEERROR
-    
+
     Statusy WABCO:
         0 - NOK
         1 - OK
@@ -35,7 +35,7 @@ class Sync(object):
         10 - przerwany test
         11 - przerwany powtorzony
         1000 - nie okreslony
-        Dodatkowo 100 + powyzsza wartosc dla 'testowania' stanowiska - aby nie uwzgledniac w statystykach. Czyli np. sprawdzamy reaklamacje i chcemy zapisac wyniki ale nie chcemy wplywac na wskazniki    
+        Dodatkowo 100 + powyzsza wartosc dla 'testowania' stanowiska - aby nie uwzgledniac w statystykach. Czyli np. sprawdzamy reaklamacje i chcemy zapisac wyniki ale nie chcemy wplywac na wskazniki
     """
     STATUS_CODES = [
         {"result": "UNDEFINED", "desc": "status undefined (not present in database)", "wabco": 1000, "trace": 0},
@@ -91,15 +91,19 @@ class Sync(object):
         # logger.addHandler(_fh)
         logging.root.addHandler(_fh)
         logger.info("Using DB file: {db}".format(db=self._config['main']['dbfile'][0]))
-        
-        # cleanup (tmp csv handling)        
+
+        # cleanup (tmp csv handling)
         cleanup = self._config['main']['cleanup'][0]
         if int(cleanup) == 0:
             self.clenup = False
-            
+
         if int(cleanup) == 1:
             self.clenup = True
-         
+
+        # product timeout in minutes (sync will be triggered once product will not reach station 55 within timeout.)
+        self.product_timeout = 480
+        if 'product_timeout' in self._config['main']:
+            self.product_timeout = int(self._config['main']['product_timeout'][0])
 
     def get_conf(self):
         return self._config
@@ -111,22 +115,22 @@ class Sync(object):
         """
         translates trace status code to wabco status code
         """
-        
+
         for code in Sync.STATUS_CODES:
             if st == code['trace']:
-                return code['wabco']    
+                return code['wabco']
         return st
-        
+
     def wabco_to_trace_status(self, st):
         """
         translates wabco status code to trace status code
         """
-        
+
         for code in Sync.STATUS_CODES:
             if st == code['wabco']:
-                return code['trace']    
+                return code['trace']
         return st
-        
+
     def get_product_station_status(self, wabco_id, serial, station_id):
         # wabco_id = '4640062010'
         # serial = '000024'
@@ -134,7 +138,7 @@ class Sync(object):
         item = Product.query.filter_by(type=wabco_id).filter_by(serial=serial).first()
 
         st = 1000  # set status to undefined first
-        result = 0 # Test step value result - set to failed. Result has to be either 0 (NOK) or 1 (OK). 
+        result = 0 # Test step value result - set to failed. Result has to be either 0 (NOK) or 1 (OK).
         for status in item.statuses.filter_by(station_id=station_id).all():
             st = status.status
             # set result to ok - in case station status is ok or repeatedok
@@ -214,13 +218,13 @@ class Sync(object):
         out, err = p.communicate()
 
         logger.info(out)
-        
+
         if self.cleanup:
             os.unlink(csv_file)
             logger.debug("CSV file removed: {csv}".format(csv=csv_file))
         else:
             logger.warn("CSV file not removed: {csv}".format(csv=csv_file))
-            
+
         return p.returncode
 
     def product_sync(self, wabco_id, serial):
@@ -248,31 +252,31 @@ class Sync(object):
         # 3 - sync failed.
 
         """
-        
+
         """
         Osobiscie sklanialem sie w strone nastepujacego rozwiazania:
         - zawor przeszedl stacje 55 - wyzwalaj synchronizacje
         - Jezeli status montazu na dowolnej stacji jest NOK - montaz zostaje przerwany - wyzwalaj synchronizacje
-        - jezeli status montazu zaworu na dowolnej stacji jest OK wstrzymaj sie z syncronizacja danych do momentu az zawor dotrze do stacji 55. 
-        - jezeli status montazu zaworu na dowolnej stacji jest OK i zawor nie przeszedl przez stacje 55 w ciagu 24h - cos jest nie tak - wyzwalaj synchronizacje. 
-          
+        - jezeli status montazu zaworu na dowolnej stacji jest OK wstrzymaj sie z syncronizacja danych do momentu az zawor dotrze do stacji 55.
+        - jezeli status montazu zaworu na dowolnej stacji jest OK i zawor nie przeszedl przez stacje 55 w ciagu 24h - cos jest nie tak - wyzwalaj synchronizacje.
+
         """
-        #candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).filter_by(type="4640062010").all()  # TEST: limit to test type only 
+        #candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).filter_by(type="4640062010").all()  # TEST: limit to test type only
         candidates = Product.query.filter_by(prodasync=0).order_by(Product.date_added).all()
         for candidate in candidates:
             last_status = candidate.statuses.order_by(Status.id.desc()).first()
-            
+
             # product just passed station 55 - trigger sync
             if last_status is None:
                 logger.warn("Product: {product} has no status stored.".format(product=candidate.id))
                 continue
-            
+
             if last_status.station_id == 55:
                 candidate.prodasync = 1
                 logger.info("Product: {product} set as ready to sync as it just passed station 55.".format(product=candidate.id))
                 continue
-                
-            # if last status is NOK set ready to sync.  
+
+            # if last status is NOK set ready to sync.
             if last_status.status == 2:
                 candidate.prodasync = 1
                 logger.info("Product: {product} set as ready to sync due to last status set to NOK.".format(product=candidate.id))
@@ -284,15 +288,15 @@ class Sync(object):
             except ValueError, e:
                 logger.error("Unable to convert date: {date} with format '%Y-%m-%d %H:%M:%S.%f'. Set to timeout".format(date=last_status.date_time))
                 last_status_update = datetime.datetime.now() - datetime.datetime(2015, 1, 1)
-                
-            if last_status_update.days > 0:
+
+            if last_status_update.total_seconds() / 60 > self.product_timeout:
                 candidate.prodasync = 1
-                logger.info("Product: {product} set as ready to sync as it did not reached station 55 within 24h.".format(product=candidate.id))
+                logger.info("Product: {product} set as ready to sync as it did not reached station 55 within {timeout} minutes.".format(product=candidate.id, timeout=self.product_timeout))
                 continue
 
-            # not yet ready to sync 
+            # not yet ready to sync
             logger.info("Product: {product} is not yet ready to sync.".format(product=candidate.id))
-        
+
         # store db session modifications to the file.
         db.session.commit()
         return 0
@@ -322,5 +326,5 @@ class Sync(object):
 
         db.session.commit()
         logger.info("Sync of {number} products finished in {time}. Stats: {failed} failed / {success} succeed.".format(number=len(items), failed=self.sync_failed_count, success=self.sync_success_count, time=datetime.datetime.now()-self.time_started))
-            
+
         return 0

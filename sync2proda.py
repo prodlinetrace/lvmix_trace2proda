@@ -18,7 +18,6 @@ def main():
     logging.info("Starting main app")
     sys.argv.append("-v")
     sync = Sync(sys.argv)
-    wabco_id='4640062010'
     sync.prepare_products_for_proda_sync()
     sync.sync_all_products()
     logger.info("Proda Sync Program Finished")
