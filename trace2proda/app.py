@@ -58,17 +58,17 @@ class Sync(object):
         self._opts, self._args = parse_args(self._argv)
         self.cleanup = False
 
-        # handle logging - set root logger level
-        logging.root.setLevel(logging.INFO)
-        logger = logging.getLogger(__name__.ljust(24)[:24])
-        logger.setLevel(loglevel)
+        self.logger = logging.getLogger(__name__.ljust(24)[:24])
+        self.logger.setLevel(logging.DEBUG)
 
         # parse config file
-        logger.info("Using config file: {cfg}.".format(cfg=self._opts.config))
+        self.logger.info("Using config file: {cfg}.".format(cfg=self._opts.config))
         self._config = parse_config(self._opts.config)
         #_fh = TimedRotatingFileHandler(self._config['main']['logfile'][0], when="MIDNIGHT", interval=1, backupCount=30)
         _fh = logging.FileHandler(self._config['main']['logfile'][0])
+        _fh.setLevel(logging.DEBUG)
         _ch = logging.StreamHandler()
+        _ch.setLevel(logging.INFO)
 
         if self._opts.quiet:
             # log errors to console
@@ -77,28 +77,25 @@ class Sync(object):
             _fh.setLevel(logging.INFO)
 
         if self._opts.verbose:
+            self.logger.setLevel(logging.DEBUG)
             # log INFO+ to console
-            _ch.setLevel(logging.INFO)
+            _ch.setLevel(logging.DEBUG)
             # log DEBUG+ to file
             _fh.setLevel(logging.DEBUG)
-            logger.setLevel(logging.DEBUG)
-            logging.root.setLevel(logging.DEBUG)
-            logging.root.addHandler(_ch)
-
 
         _fh.setFormatter(logging.Formatter('%(asctime)s - %(name)-22s - %(levelname)-8s - %(message)s'))
         _ch.setFormatter(logging.Formatter('%(name)s - %(levelname)8s - %(message)s'))
-        # logger.addHandler(_fh)
-        logging.root.addHandler(_fh)
-        logger.info("Using DB file: {db}".format(db=self._config['main']['dbfile'][0]))
+        self.logger.addHandler(_fh)
+        self.logger.addHandler(_ch)
+        self.logger.info("Using DB file: {db}".format(db=self._config['main']['dbfile'][0]))
 
         # cleanup (tmp csv handling)
         cleanup = self._config['main']['cleanup'][0]
         if int(cleanup) == 0:
-            self.clenup = False
+            self.cleanup = False
 
         if int(cleanup) == 1:
-            self.clenup = True
+            self.cleanup = True
 
         # product timeout in minutes (sync will be triggered once product will not reach station 55 within timeout.)
         self.product_timeout = 480
@@ -171,15 +168,33 @@ class Sync(object):
 
         return st, results
 
-    def generate_csv_file(self, wabco_id, serial):
+    def product_sync(self, wabco_id, serial):
+        if wabco_id == "0":
+            return 0
+
         if wabco_id in self._config:
             msg = "wabco_id: {wabco_id} found in config file: {config_file}".format(wabco_id=wabco_id, config_file=self.get_conf_file_name())
-            logger.info(msg)
+            self.logger.debug(msg)
+            is_active = int(self._config[wabco_id]['active'][0])
+            if is_active != 1:
+                msg = "wabco_id: {wabco_id} is not set to active in: {config_file}".format(wabco_id=wabco_id, config_file=self.get_conf_file_name())
+                self.logger.warn(msg)
+                return 130
         else:
             msg = "unable to find wabco_id: {wabco_id} in config file: {config_file}. Need to skip it. Sorry!".format(wabco_id=wabco_id, config_file=self.get_conf_file_name())
-            logger.error(msg)
-            #return 1
+            self.logger.error(msg)
+            return 120
 
+        csv_file = self.generate_csv_file(wabco_id, serial)
+        if os.path.exists(csv_file):
+            self.logger.debug("psark csv file generated: {csv_file}".format(csv_file=csv_file))
+        else:
+            self.logger.error("unable to find psark csv file generated: {csv_file}".format(csv_file=csv_file))
+            return 2
+
+        return self.run_psark(wabco_id, serial, csv_file)
+
+    def generate_csv_file(self, wabco_id, serial):
         csv_file_name = tempfile.mktemp(suffix=".csv", prefix="psark-{wid}-{sn}-".format(wid=wabco_id, sn=serial))
 
         test_steps = self._config[wabco_id]['proda_sequence']
@@ -199,7 +214,7 @@ class Sync(object):
                 status, tvs= self.get_product_operation_data(wabco_id, serial, ts_id)
             tv = tvs[:ts_tv_count]
 
-            logger.info("TS found in db. WI: {wabco_id} SN: {serial} TS_ID: {ts_id} TS_DESC: {ts_desc} ST: {status} TV: {tv}".format(wabco_id=wabco_id, serial=serial, ts_id=ts_id, ts_desc=ts_desc, status=status, tv=tv))
+            self.logger.debug("TS found in db. WI: {wabco_id} SN: {serial} TS_ID: {ts_id} TS_DESC: {ts_desc} ST: {status} TV: {tv}".format(wabco_id=wabco_id, serial=serial, ts_id=ts_id, ts_desc=ts_desc, status=status, tv=tv))
 
             with open(csv_file_name, 'ab') as csvfile:
                 result_writer = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
@@ -213,29 +228,19 @@ class Sync(object):
         db_pass = self._config['main']['db_pass'][0]
         db_name = self._config['main']['db_name'][0]
         cmd = [psark_exe, '-c', 'csv_feed', '-f', csv_file, '-u', db_user, '-p', db_pass, '-d', db_name, '-w', wabco_id, '-s', serial]
-        logger.info("Running command: {cmd}".format(cmd=" ".join(cmd)))
+        self.logger.info("Running command: {cmd}".format(cmd=" ".join(cmd)))
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         out, err = p.communicate()
 
-        logger.info(out)
+        self.logger.debug(out)
 
         if self.cleanup:
             os.unlink(csv_file)
-            logger.debug("CSV file removed: {csv}".format(csv=csv_file))
+            self.logger.debug("CSV file removed: {csv}".format(csv=csv_file))
         else:
-            logger.warn("CSV file not removed: {csv}".format(csv=csv_file))
+            self.logger.warn("CSV file not removed: {csv}".format(csv=csv_file))
 
         return p.returncode
-
-    def product_sync(self, wabco_id, serial):
-        csv_file = self.generate_csv_file(wabco_id, serial)
-        if os.path.exists(csv_file):
-            logger.info("psark csv file generated: {csv_file}".format(csv_file=csv_file))
-        else:
-            logger.error("unable to find psark csv file generated: {csv_file}".format(csv_file=csv_file))
-            return 2
-
-        return self.run_psark(wabco_id, serial, csv_file)
 
     def prepare_products_for_proda_sync(self):
         """
@@ -268,34 +273,34 @@ class Sync(object):
 
             # product just passed station 55 - trigger sync
             if last_status is None:
-                logger.warn("Product: {product} has no status stored.".format(product=candidate.id))
+                self.logger.warn("Product: {product} has no status stored.".format(product=candidate.id))
                 continue
 
             if last_status.station_id == 55:
                 candidate.prodasync = 1
-                logger.info("Product: {product} set as ready to sync as it just passed station 55.".format(product=candidate.id))
+                self.logger.debug("Product: {product} set as ready to sync as it just passed station 55.".format(product=candidate.id))
                 continue
 
             # if last status is NOK set ready to sync.
             if last_status.status == 2:
                 candidate.prodasync = 1
-                logger.info("Product: {product} set as ready to sync due to last status set to NOK.".format(product=candidate.id))
+                self.logger.debug("Product: {product} set as ready to sync due to last status set to NOK.".format(product=candidate.id))
                 continue
 
             # product status is OK but it did not reached station 55 within 24h.
             try:
                 last_status_update = datetime.datetime.now() - datetime.datetime.strptime(last_status.date_time, '%Y-%m-%d %H:%M:%S.%f')
             except ValueError, e:
-                logger.error("Unable to convert date: {date} with format '%Y-%m-%d %H:%M:%S.%f'. Set to timeout".format(date=last_status.date_time))
+                self.logger.error("Unable to convert date: {date} with format '%Y-%m-%d %H:%M:%S.%f'. Set to timeout".format(date=last_status.date_time))
                 last_status_update = datetime.datetime.now() - datetime.datetime(2015, 1, 1)
 
             if last_status_update.total_seconds() / 60 > self.product_timeout:
                 candidate.prodasync = 1
-                logger.info("Product: {product} set as ready to sync as it did not reached station 55 within {timeout} minutes.".format(product=candidate.id, timeout=self.product_timeout))
+                self.logger.debug("Product: {product} set as ready to sync as it did not reached station 55 within {timeout} minutes.".format(product=candidate.id, timeout=self.product_timeout))
                 continue
 
             # not yet ready to sync
-            logger.info("Product: {product} is not yet ready to sync.".format(product=candidate.id))
+            self.logger.debug("Product: {product} is not yet ready to sync.".format(product=candidate.id))
 
         # store db session modifications to the file.
         db.session.commit()
@@ -310,21 +315,21 @@ class Sync(object):
         # 3 - sync failed.
 
         items = Product.query.filter_by(prodasync=1).order_by(Product.date_added).all()
-        logger.info("Found: {number} products to sync".format(number=len(items)))
+        self.logger.info("Found: {number} products to sync".format(number=len(items)))
         for item in items:
-            logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
+            self.logger.info("Starting sync of: {id} PT: {type} SN: {sn} PRODA_SYNC_STAT: {prodasync}".format(id=item.id, type=item.type, sn=item.serial, prodasync=item.prodasync))
             status = self.product_sync(item.type, item.serial)
             if status == 0:
                 self.sync_success_count += 1
                 item.prodasync = 2
-                logger.info("Completed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
+                self.logger.info("Completed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
             else:
                 self.sync_failed_count += 1
                 item.prodasync = 3
-                logger.error("Failed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
+                self.logger.error("Failed sync of: {id} PT: {type} SN: {sn}. Sync Status: {status}".format(id=item.id, type=item.type, sn=item.serial, status=status))
             db.session.commit()
 
         db.session.commit()
-        logger.info("Sync of {number} products finished in {time}. Stats: {failed} failed / {success} succeed.".format(number=len(items), failed=self.sync_failed_count, success=self.sync_success_count, time=datetime.datetime.now()-self.time_started))
+        self.logger.info("Sync of {number} products finished in {time}. Stats: {failed} failed / {success} succeed.".format(number=len(items), failed=self.sync_failed_count, success=self.sync_success_count, time=datetime.datetime.now()-self.time_started))
 
         return 0

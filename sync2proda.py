@@ -11,13 +11,9 @@ from trace2proda.models import *
 logger = logging.getLogger(__name__)
 
 def main():
-    logging.root.setLevel(logging.DEBUG)
-    logger.root.setLevel(logging.DEBUG)
-    logger.setLevel(logging.DEBUG)
     logger.info("Proda Sync Program Started")
-    logging.info("Starting main app")
-    sys.argv.append("-v")
-    sync = Sync(sys.argv)
+    logger.info("Starting main app")
+    sync = Sync(sys.argv, loglevel=logging.INFO)
     sync.prepare_products_for_proda_sync()
     sync.sync_all_products()
     logger.info("Proda Sync Program Finished")
