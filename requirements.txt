@@ -1,2 +1,4 @@
 ctypes
 six
+cx_Oracle==7.0
+ipython
