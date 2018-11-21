@@ -1,0 +1,17 @@
+20001 - numer WABCO (string) powinien mieć dlugość 10 znaków
+20002 - nie znaleziono numeru WABCO w tabeli wabcopart
+20003 - nie ma zwolnionego procesu/process stepu dla podanych wabco_number oraz process_step_sequence
+20004 - znaleziono więcej niż jeden (tylko jeden jest dozwolony) proces/process step dla podanych wabco_number oraz process_step_sequence
+20005-20010 - należy zweryfikować czy przekazany rezulatat jest w odpowiednim formacie:
+w przypadku zapisu rezultatu kroku testu (Test Step):
+    format to: TS_TSOrder_TSStatus
+    TS - prefiks mówiący o tym, że zapisujemy wynik Test Step
+    TSOrder - sprawdzić w GUI(bazie danych) czy mamy ten test step order (test_step.test_order)
+    TSStatus - status kroku, dozwolone statusy 0=NOK, 1=OK
+w przypadku zapisu zmierzonego wyniku (Test Value):
+    format to: TV_TSSequence_TSOrder_TVStatus_Result
+    TV - prefiks mówiący o tym, że zapisujemy wynik Test Value
+    TSOrder - sprawdzić w GUI(bazie danych) czy mamy ten test step order (test_step.test_order)
+	TVStatus - sprawdzić w GUI(bazie danych) czy mamy ten test value sequence dla kroku TSOrder (test_value.test_value_sequence)
+    TVStatus - status wartości, dozwolone statusy 0=NOK, 1=OK
+	Result - zmierzona wartość, kropka używana do oddzielenia częsci całkowitej od dziesiętnej
