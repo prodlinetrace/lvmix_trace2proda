@@ -1,6 +1,49 @@
 /*
+wybieranie kompletnej schemy dla wabco_number: 4640061000
+*/
+
+select
+wabcopart.wabco_number,
+process.id process_id,
+process_step.id process_step_id,
+process_step.process_sequence process_step_sequence,
+systems.name,
+test_step.test_sequence,
+test_step.test_order,
+nvl(ls_ts_3.lookup_text,ls_ts_0.lookup_text) ts_description,
+test_value.test_value_sequence,
+test_value.minimum,
+test_value.maximum,
+nvl(ls_tv_3.lookup_text,ls_tv_0.lookup_text) tv_description
+from
+    wabcopart
+    join wabcopart_process on wabcopart.id = wabcopart_process.wabco_part_id
+    join process on wabcopart_process.process_id = process.id
+    join process_step on process.id = process_step.process_id
+    join systems on process_step.system_id = systems.id
+    join test_step on process_step.id = test_step.process_step_id
+    join test_value on test_step.id = test_value.test_step_id
+    left outer join language_strings ls_ts_3 on test_step.description_label = ls_ts_3.label and ls_ts_3.language_id=3
+    left outer join language_strings ls_ts_0 on test_step.description_label = ls_ts_0.label and ls_ts_0.language_id=0
+    left outer join language_strings ls_tv_3 on test_value.description_label = ls_tv_3.label and ls_tv_3.language_id=3
+    left outer join language_strings ls_tv_0 on test_value.description_label = ls_tv_0.label and ls_tv_0.language_id=0
+where
+    wabcopart.wabco_number like '4640061000'
+    and systems.name like 'LV_MIX%'
+    and systems.name not like 'LV_MIX_process'
+    and process.release_id = 1
+    and process_step.release_id = 1
+    and test_step.release_id = 1
+    and test_value.release_id = 1
+	order by wabcopart.wabco_number, process_step.process_sequence, test_step.test_sequence, test_step.test_order, test_value.test_value_sequence
+    /*
+    and process_step.process_sequence=32 
+    */
+
+
+/*
 wybieranie definicji dla danego numeru wabco i process_step.process_sequence
-opcjonalnie mo¿na zakomentowa wiersz "and process_step.process_sequence=14" aby wybra wszystkie process_step_sequence
+opcjonalnie moÂ¿na zakomentowa wiersz "and process_step.process_sequence=14" aby wybra wszystkie process_step_sequence
 */
 
 select
@@ -92,7 +135,7 @@ where
 
 
 /*
-przyk³adowy insert
+przykÂ³adowy insert
 */
 
 insert into
